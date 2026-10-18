@@ -106,6 +106,12 @@ export async function runPromptExecutionChecks(){
   const rollback=await fixture(),rq=await quote(rollback),boss=await getBoss(),originalSend=boss.send.bind(boss);let insertedQueueId:string|undefined;boss.send=(async(...args:any[])=>{insertedQueueId=await (originalSend as any)(...args);throw new Error('Synthetic failure after queue insertion');}) as typeof boss.send;
   try{await assert.rejects(startPromptExecution(rollback.project,owner,{quoteId:rq.id,requestKey:randomUUID()}));}finally{boss.send=originalSend;}
   assert.equal((await pool.query('SELECT id FROM provider_request WHERE workspace_id=$1',[rollback.workspace])).rowCount,0);assert.ok(insertedQueueId);assert.equal((await pool.query('SELECT id FROM pgboss.job WHERE id=$1',[insertedQueueId])).rowCount,0);
+  const second=await fixture(),sq=await quote(second),secondIds:string[]=[];boss.send=(async(...args:any[])=>{const inserted=await (originalSend as any)(...args);secondIds.push(inserted);if(secondIds.length===2)throw new Error('Synthetic failure after the second child job insertion');return inserted;}) as typeof boss.send;
+  try{await assert.rejects(startPromptExecution(second.project,owner,{quoteId:sq.id,requestKey:randomUUID()}));}finally{boss.send=originalSend;}
+  const nulled=await fixture(),nq=await quote(nulled);boss.send=(async()=>null) as typeof boss.send;
+  try{await assert.rejects(startPromptExecution(nulled.project,owner,{quoteId:nq.id,requestKey:randomUUID()}),/Request could not be queued/);}finally{boss.send=originalSend;}
+  assert.equal((await pool.query('SELECT id FROM provider_request WHERE workspace_id=$1',[nulled.workspace])).rowCount,0);assert.equal((await pool.query('SELECT id FROM prompt_comparison WHERE workspace_id=$1',[nulled.workspace])).rowCount,0);
+  assert.equal(secondIds.length,2);assert.ok(secondIds.every(Boolean));assert.equal((await pool.query('SELECT id FROM provider_request WHERE workspace_id=$1',[second.workspace])).rowCount,0);assert.equal((await pool.query('SELECT id FROM prompt_comparison WHERE workspace_id=$1',[second.workspace])).rowCount,0);assert.equal((await pool.query('SELECT id FROM pgboss.job WHERE id=ANY($1::uuid[])',[secondIds])).rowCount,0);
   const expired=await fixture(),eq=await quote(expired);await pool.query("UPDATE prompt_execution_quote SET created_at=clock_timestamp()-interval '10 minutes',expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",[eq.id]);await assert.rejects(startPromptExecution(expired.project,owner,{quoteId:eq.id,requestKey:randomUUID()}),{status:409});
   // Owner decision D3: no cap decides between concurrent starts; different quotes both start and one quote starts once.
   const competition=await fixture(),cq1=await quote(competition),cq2=await quote(competition);const concurrent=await Promise.allSettled([startPromptExecution(competition.project,owner,{quoteId:cq1.id,requestKey:randomUUID()}),startPromptExecution(competition.project,owner,{quoteId:cq2.id,requestKey:randomUUID()})]);assert.equal(concurrent.filter(v=>v.status==='fulfilled').length,2);
@@ -148,11 +154,11 @@ export async function runPromptExecutionChecks(){
   assert.equal(paid,receiptedPaid+1);assert.deepEqual(receiptedRuns.map((r:any)=>r.status),['uncertain','cancelled']);assert.ok(receiptedRuns[0].generationId);assert.equal((await ledger(receiptedRuns[0].id)).status,'uncertain');
   mode='ok';await assert.rejects(start(receipted),{status:409,code:'SPENDING_BUDGET'});assert.equal(paid,receiptedPaid+1);
   console.log('PASS OpenRouter credit refusal settles its child at $0 while the sibling and the next start proceed; a refusal carrying a generation header stays uncertain (D3)');
-  // Owner decision D3(6): Start authorizes every child. Start still sends the legacy comparison-keyed job here; quote age
+  // Owner decision D3(6): Start authorizes every child and keys one zero-retry job to each child; quote age
   // after Start, sibling order and one child's refusal stop no sibling, and the sweeper decides per child.
   mode='ok';const aged=await fixture(),agedRun=await start(aged);
   await pool.query("UPDATE prompt_execution_quote SET created_at=clock_timestamp()-interval '10 minutes',expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",[agedRun.quoteId]);
-  await reconcilePromptExecutionJobs();assert.deepEqual((await detail(aged,agedRun.id)).runs.map((r:any)=>[r.status,r.chargeStatus]),[['queued','reserved'],['queued','reserved']],'A live comparison-keyed job covers its children after the quote ages.');
+  await reconcilePromptExecutionJobs();assert.deepEqual((await detail(aged,agedRun.id)).runs.map((r:any)=>[r.status,r.chargeStatus]),[['queued','reserved'],['queued','reserved']],'Live child-keyed jobs cover their children after the quote ages.');
   before=paid;await executePromptComparison(agedRun.id,send);assert.deepEqual((await detail(aged,agedRun.id)).runs.map((r:any)=>[r.status,r.chargeStatus]),[['completed','settled'],['completed','settled']]);assert.equal(paid,before+2);
   const ordered=await fixture(),orderedRun=await start(ordered);before=paid;await executePromptExecution(orderedRun.runs[1].id,send);
   const halfway=await detail(ordered,orderedRun.id);assert.deepEqual(halfway.runs.map((r:any)=>r.status),['queued','completed']);assert.equal(halfway.canCancel,true);assert.equal(paid,before+1);
@@ -161,9 +167,12 @@ export async function runPromptExecutionChecks(){
   const drifted=await fixture(),driftRun=await start(drifted);before=paid;priceModel=mini;try{await executePromptComparison(driftRun.id,send);}finally{priceModel=null;}
   const driftDone=await detail(drifted,driftRun.id);assert.deepEqual(driftDone.runs.map((r:any)=>[r.model,r.status,r.chargeStatus]),[[mini,'cancelled','cancelled'],[models[1],'completed','settled']]);
   assert.equal(driftDone.runs[0].diagnostic,'Not dispatched because the endpoint, permissions, credentials, the paid-work pause or an uncertain charge changed.');assert.equal(paid,before+1);assert.ok(!sent.includes(driftRun.runs[0].id));
-  // The second child keeps a child-keyed job (the shape per-child Start will send); the worker group below runs it.
-  const swept=await fixture(),sweptRun=await start(swept),sweptChild=sweptRun.runs[1].id;before=paid;await pool.query('DELETE FROM pgboss.job WHERE id=$1',[sweptRun.id]);
-  assert.ok(await boss.send(promptExecutionQueue,{comparisonId:sweptRun.id,executionId:sweptChild},{id:sweptChild,retryLimit:0,expireInSeconds:180}));
+  // Start sent exactly one job per child: id and executionId equal the child, zero retries, 180 seconds, no comparison-keyed job.
+  // Deleting the first child's job leaves that child jobless; the worker group below runs the second child's job.
+  const swept=await fixture(),sweptRun=await start(swept),sweptChild=sweptRun.runs[1].id;before=paid;
+  const sweptJobs=(await pool.query("SELECT id,retry_limit,expire_seconds,data FROM pgboss.job WHERE name='prompt-execution' AND (id=$1::uuid OR data->>'comparisonId'=$2) ORDER BY id",[sweptRun.id,sweptRun.id])).rows;
+  assert.deepEqual(sweptJobs,sweptRun.runs.map((r:any)=>r.id).sort().map((id:string)=>({id,retry_limit:0,expire_seconds:180,data:{executionId:id,comparisonId:sweptRun.id}})));
+  await pool.query('DELETE FROM pgboss.job WHERE id=$1',[sweptRun.runs[0].id]);
   await reconcilePromptExecutionJobs();const sweptDetail=await detail(swept,sweptRun.id);assert.deepEqual(sweptDetail.runs.map((r:any)=>[r.status,r.chargeStatus]),[['cancelled','cancelled'],['queued','reserved']]);
   assert.equal(sweptDetail.runs[0].diagnostic,'The queued request did not run. Prepare a new quote to try again.');assert.equal(paid,before);
   console.log('PASS Start authorizes every child (D3): quote age after Start, sibling order and a price change on one model stop no sibling; the sweeper cancels only a jobless queued child');
@@ -293,9 +302,10 @@ export async function runPromptExecutionChecks(){
   assert.equal((await detail(raw,rawRun.id)).inputExpired,true);assert.equal((await pool.query('SELECT text FROM prompt_text_version WHERE id=$1',[raw.prompt.currentVersionId])).rows[0].text,'Exact original prompt');
   console.log('PASS stale crash snapshot, payload-only bounded retention, rollback and preserved authored prompts');
 
-  // The production worker runs the legacy comparison-keyed job Start still sends and routes the child-keyed
-  // {executionId} job kept by the D3 group above to that one child (D3 C1).
-  const worker=await fixture(),wr=await start(worker);assert.equal((await pool.query('SELECT retry_limit FROM pgboss.job WHERE id=$1',[wr.id])).rows[0].retry_limit,0);await pool.query('UPDATE pgboss.job SET priority=100 WHERE id=ANY($1::uuid[])',[[wr.id,sweptChild]]);globalThis.fetch=send;await startWorker();const deadline=Date.now()+15_000;
+  // The production worker drains a legacy comparison-keyed job (the shape Start sent before per-child Start; the handler
+  // keeps it for one release) and runs the child-keyed {executionId} job Start sent for the swept second child (D3).
+  const worker=await fixture(),wr=await start(worker);assert.deepEqual((await pool.query('SELECT retry_limit FROM pgboss.job WHERE id=ANY($1::uuid[])',[wr.runs.map((r:any)=>r.id)])).rows.map((r:any)=>r.retry_limit),[0,0]);await pool.query('DELETE FROM pgboss.job WHERE id=ANY($1::uuid[])',[wr.runs.map((r:any)=>r.id)]);
+  assert.ok(await boss.send(promptExecutionQueue,{comparisonId:wr.id},{id:wr.id,retryLimit:0,expireInSeconds:180}));await pool.query('UPDATE pgboss.job SET priority=100 WHERE id=ANY($1::uuid[])',[[wr.id,sweptChild]]);globalThis.fetch=send;await startWorker();const deadline=Date.now()+15_000;
   const workerActive=async()=>[...(await detail(worker,wr.id)).runs,...(await detail(swept,sweptRun.id)).runs].some((r:any)=>['queued','running'].includes(r.status));
   while(await workerActive()&&Date.now()<deadline)await new Promise(r=>setTimeout(r,50));await stopJobs();globalThis.fetch=blocked;assert.deepEqual((await detail(worker,wr.id)).runs.map((r:any)=>r.status),['completed','completed']);for(const r of wr.runs)assert.equal(sent.filter(v=>v===r.id).length,1);
   assert.deepEqual((await detail(swept,sweptRun.id)).runs.map((r:any)=>r.status),['cancelled','completed']);assert.equal(sent.filter(v=>v===sweptChild).length,1);assert.ok(!sent.includes(sweptRun.runs[0].id));
@@ -421,8 +431,8 @@ export async function runPromptExecutionChecks(){
   }
   const citedId=citedStart.comparison.runs[0].id,citedEndpoint=`${config.appUrl}/api/projects/${cited.project}/prompt-executions`,citedPath='/runs/'+citedId+'/citations';
   const native=(path:string)=>handleApi(new Request(citedEndpoint+path,{headers:{cookie}}));
-  const ackRows=async()=>({ledger:(await pool.query('SELECT id,md5(to_jsonb(p)::text) AS digest FROM provider_request p WHERE workspace_id=$1 ORDER BY id',[cited.workspace])).rows,jobs:(await pool.query('SELECT id,md5(to_jsonb(j)::text) AS digest FROM pgboss.job j WHERE id=$1',[citedStart.comparison.id])).rows});
-  const beforeAcks=await ackRows();
+  const ackRows=async()=>({ledger:(await pool.query('SELECT id,md5(to_jsonb(p)::text) AS digest FROM provider_request p WHERE workspace_id=$1 ORDER BY id',[cited.workspace])).rows,jobs:(await pool.query("SELECT id,md5(to_jsonb(j)::text) AS digest FROM pgboss.job j WHERE name='prompt-execution' AND (id=$1::uuid OR data->>'comparisonId'=$2) ORDER BY id",[citedStart.comparison.id,citedStart.comparison.id])).rows});
+  const beforeAcks=await ackRows();assert.equal(beforeAcks.jobs.length,citedStart.comparison.runs.length);
   for(const [path,input,status]of [['/comparisons',{quoteId:citedQuote.id,requestKey:citedKey},202],['/comparisons/'+citedStart.comparison.id+'/cancel',{},200]]as const){const response=await handleApi(new Request(citedEndpoint+path,{method:'POST',headers:{cookie,origin:config.appUrl,'content-type':'application/json'},body:JSON.stringify(input)}));assert.equal(response.status,status);const bytes=new Uint8Array(await response.arrayBuffer());assert.ok(bytes.byteLength<=2_097_152);const ack=JSON.parse(new TextDecoder('utf8',{fatal:true}).decode(bytes));assert.equal(ack.comparison.id,citedStart.comparison.id);assert.equal(ack.comparison.answerMode,'individual');assert.deepEqual(ack.comparison.runs.map((run:any)=>run.id),citedStart.comparison.runs.map(run=>run.id));assert.ok(ack.comparison.runs.every((run:any)=>run.status==='completed'&&!('result'in run)&&!('generationId'in run)&&!('reportedCost'in run)));if(status===200)assert.equal(ack.comparison.cancelRequested,true);}
   assert.deepEqual(await ackRows(),beforeAcks);assert.equal(citationPaid,2);assert.equal((await pool.query('SELECT count(*)::int AS n FROM prompt_comparison WHERE workspace_id=$1',[cited.workspace])).rows[0].n,1);
   let reconcileReads=0;const inconclusiveAck=await reconcilePromptExecution(uncertainFour.project,owner,unresolvedFour.comparison.runs[0].id,{},async(url,init)=>{reconcileReads++;return sendFour(url,init);});assert.equal(inconclusiveAck.reconciliation.status,'inconclusive');assert.equal(inconclusiveAck.comparison.id,uncertainStart.comparison.id);assert.equal(inconclusiveAck.comparison.answerMode,'individual');assert.ok(inconclusiveAck.comparison.runs.every(run=>!('result'in run)));assert.ok(Buffer.byteLength(JSON.stringify(inconclusiveAck),'utf8')<=2_097_152);assert.equal(reconcileReads,0);assert.equal(fourPaid,10);
@@ -444,7 +454,9 @@ export async function runPromptExecutionChecks(){
   await assert.rejects(heldRead(cited.workspace,()=>getPromptExecutionCitations(cited.project,viewer,citedId,new URLSearchParams({offset:'0'})),async gate=>{await gate.query('DELETE FROM membership WHERE workspace_id=$1 AND user_id=$2',[cited.workspace,viewer]);}),{status:404});
   assert.equal(citationPaid,2);assert.equal(fourPaid,10);assert.deepEqual((await pool.query('SELECT status,count(*)::int AS count,sum(actual_micros)::text AS actual FROM provider_request WHERE workspace_id=$1 GROUP BY status',[cited.workspace])).rows,[{status:'settled',count:2,actual:'26'}]);
   assert.deepEqual((await pool.query('SELECT status,count(*)::int AS count,sum(actual_micros)::text AS actual FROM provider_request WHERE workspace_id=ANY($1::text[]) GROUP BY status ORDER BY status',[[four.workspace,one.workspace,failedFour.workspace,uncertainFour.workspace,cited.workspace]])).rows,[{status:'cancelled',count:3,actual:null},{status:'settled',count:11,actual:'143'},{status:'uncertain',count:1,actual:null}]);
-  assert.equal((await pool.query('SELECT count(*)::int AS n FROM pgboss.job WHERE id=ANY($1::uuid[])',[[fourStart.comparison.id,oneStart.comparison.id,failedStart.comparison.id,uncertainStart.comparison.id,citedStart.comparison.id]])).rows[0].n,5);
+  const fiveComparisons=[fourStart.comparison.id,oneStart.comparison.id,failedStart.comparison.id,uncertainStart.comparison.id,citedStart.comparison.id];
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM pgboss.job j JOIN prompt_execution r ON r.id=j.id WHERE j.name='prompt-execution' AND r.comparison_id=ANY($1::uuid[]) AND j.data->>'executionId'=r.id::text",[fiveComparisons])).rows[0].n,15,'One job per reserved child: the 15 ledger rows above.');
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM pgboss.job WHERE id=ANY($1::uuid[])',[fiveComparisons])).rows[0].n,0);
   console.log('PASS expanded legal citations preserve bounded answer text and all ordered sources, native aggregate413, fresh page retention/access and exact additional charges');
 
   // Separate cache fixture: all original twelve groups/financial assertions above remain exact.
@@ -483,7 +495,7 @@ export async function runPromptExecutionChecks(){
   const reversedQuote=await cacheQuote([selected[1],selected[0]]);assert.equal(reversedQuote.quote.estimateUsd,'0.000000');assert.equal(reversedQuote.quote.cacheReused,true);
   const reverseKey=randomUUID(),reversed=await startPromptExecution(cached.project,cacheOwner,{quoteId:reversedQuote.quote.id,requestKey:reverseKey});
   assert.deepEqual(reversed.comparison.runs.map(r=>r.model),[selected[1],selected[0]]);assert.equal(reversed.comparison.runs.every(r=>r.reuse&&r.chargeStatus===null&&r.actualUsd===null),true);
-  assert.equal((await pool.query('SELECT count(*)::int AS n FROM pgboss.job WHERE id=$1',[reversed.comparison.id])).rows[0].n,0);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM pgboss.job WHERE id=$1::uuid OR data->>'comparisonId'=$2",[reversed.comparison.id,reversed.comparison.id])).rows[0].n,0);
   assert.deepEqual((await pool.query('SELECT id,md5(to_jsonb(p)::text) AS hash FROM provider_request p WHERE workspace_id=$1 ORDER BY id',[cached.workspace])).rows,sourceLedger);
   assert.equal((await startPromptExecution(cached.project,cacheOwner,{quoteId:reversedQuote.quote.id,requestKey:reverseKey})).comparison.id,reversed.comparison.id);
   const missQuote=await cacheQuote([selected[1],selected[2],selected[0]]);await assert.rejects(cacheStart(missQuote),{status:409});assert.equal(fourPaid-cachePaidBefore,2);
@@ -508,7 +520,7 @@ export async function runPromptExecutionChecks(){
   const purged=await getPromptExecutionResult(cached.project,viewer,reversed.comparison.runs[0].id);assert.equal(purged.run.result,null);assert.equal(purged.run.resultExpired,true);assert.equal(purged.citations.count,null);
   await assert.rejects(heldRead(cached.workspace,()=>getPromptExecutionResult(cached.project,viewer,reversed.comparison.runs[0].id),async gate=>{await gate.query('DELETE FROM membership WHERE workspace_id=$1 AND user_id=$2',[cached.workspace,viewer]);}),{status:404});
   assert.deepEqual((await pool.query('SELECT status,count(*)::int AS n,sum(actual_micros)::text AS micros FROM provider_request WHERE workspace_id=$1 GROUP BY status',[cached.workspace])).rows,[{status:'settled',n:5,micros:'65'}]);
-  assert.equal((await pool.query("SELECT count(*)::int AS n FROM pgboss.job WHERE name='prompt-execution' AND id IN(SELECT id FROM prompt_comparison WHERE workspace_id=$1)",[cached.workspace])).rows[0].n,4);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM pgboss.job WHERE name='prompt-execution' AND id IN(SELECT id FROM prompt_execution WHERE workspace_id=$1)",[cached.workspace])).rows[0].n,5,'One job per paid child: the five settled rows above.');assert.equal((await pool.query("SELECT count(*)::int AS n FROM pgboss.job WHERE name='prompt-execution' AND id IN(SELECT id FROM prompt_comparison WHERE workspace_id=$1)",[cached.workspace])).rows[0].n,0);
   const revokedHit=await cacheQuote([selected[3]]);assert.equal(revokedHit.quote.cacheReused,true);await revokeProvider(cached.workspace,cacheOwner,cached.connectionId);await assert.rejects(cacheStart(revokedHit),{status:404});
   const cacheUnknown=await fixture(),unknownQuote=(await quotePromptExecution(cacheUnknown.project,owner,{...cacheUnknown.request,reuseCached:true},sendFour)).quote;
   const unknownCacheStart=await startPromptExecution(cacheUnknown.project,owner,{quoteId:unknownQuote.id,requestKey:randomUUID()});loseFour=true;await executePromptComparison(unknownCacheStart.comparison.id,sendFour);loseFour=false;

@@ -47,7 +47,7 @@ Domains have canonical/serving/redirect roles. HTTP-only aliases use configured 
 
 The ledger covers only this app's dispatches, not activity from other clients sharing the provider account. Show balance age and available-vs-reserved estimates. There is no per-connection or workspace monetary limit in the app (owner decision D3) and nothing pauses automatically; provider-side budgets are the monetary caps, so configure them where available. When a provider unambiguously refuses a request for balance, credit or budget before doing any work, that request fails with a US$0.000000 receipt and the app keeps running; an ambiguous response stays uncertain ([refusal contract](foundation.md#account-api-key-and-provider-controls)). A quote does not guarantee a provider never changes pricing or charges outside it.
 
-Start authorizes every child of a paid parent (owner decision D3): each child runs as its own zero-retry job with its own time limit, quote age is not rechecked after Start, a child may finish after its siblings and the parent's state is derived from its children; future agent sub-tasks follow the same rule. Prompt comparisons still enqueue one comparison job that runs their children in order until Start enqueues one job per child.
+Start authorizes every child of a paid parent (owner decision D3): each child runs as its own zero-retry job with its own time limit, quote age is not rechecked after Start, a child may finish after its siblings and the parent's state is derived from its children; future agent sub-tasks follow the same rule. Prompt comparisons enqueue one job per uncached child at Start.
 
 ## Metric contract
 

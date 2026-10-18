@@ -181,7 +181,9 @@ export function startWorker(): Promise<void> {
       await boss.work<{dispatchId:string}>(rankQueue,{batchSize:1},async jobs=>{for(const job of jobs)await executeRankDispatch(job.data?.dispatchId);});
       await boss.work<{dispatchId:string;generation:string}>(rankPollQueue,{batchSize:1},async jobs=>{for(const job of jobs)await pollRankDispatch(job.data?.dispatchId,job.data?.generation);});
       // ponytail: the comparisonId branch drains jobs queued before per-child Start; remove one release after C2
-      await boss.work<{executionId?:string;comparisonId?:string}>(promptExecutionQueue,{batchSize:1},async jobs=>{for(const job of jobs)await(job.data?.executionId?executePromptExecution(job.data.executionId):executePromptComparison(job.data?.comparisonId as string));});
+      // ponytail: one job per child since D3, so the 0.5s floor poll keeps the pre-D3 ceiling (a 2s poll per comparison of up to
+      // four children); children still run one at a time per worker. Upgrade path: localConcurrency for parallel children.
+      await boss.work<{executionId?:string;comparisonId?:string}>(promptExecutionQueue,{batchSize:1,pollingIntervalSeconds:0.5},async jobs=>{for(const job of jobs)await(job.data?.executionId?executePromptExecution(job.data.executionId):executePromptComparison(job.data?.comparisonId as string));});
       await boss.work<{runId:string}>(suggestionQueue,{batchSize:1},async jobs=>{for(const job of jobs)await executeAiSuggestion(job.data?.runId);});
       await boss.work<{runId:string}>(aiSearchQueue,{batchSize:1},async jobs=>{for(const job of jobs)await executeAiSearch(job.data?.runId);});
       await boss.work<{runId:string}>(contentSupportQueue,{batchSize:1},async jobs=>{for(const job of jobs)await executeContentSupport(job.data?.runId);});

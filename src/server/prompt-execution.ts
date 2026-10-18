@@ -196,9 +196,10 @@ export async function startPromptExecution(projectId:string,userId:string,raw:un
       if(item?.sourceRunId){await client.query('INSERT INTO prompt_comparison_item(id,comparison_id,workspace_id,project_id,position,execution_id,reused) VALUES($1,$2,$3,$4,$5,$6,true)',[randomUUID(),id,wid,projectId,position,item.sourceRunId]);continue;}
       await reserveSpendInTransaction(client,wid,userId,{connectionId:q.connection_id,requestKey:randomUUID(),operation:'prompt.execute',inputHash:requestHash(`${q.input_hash}:${position}:${route.model}`),estimateUsd:usd(route.estimateMicros)},async(tx,child)=>{
         await tx.query("INSERT INTO prompt_execution(id,comparison_id,workspace_id,project_id,position,route,status,cache_key) VALUES($1,$2,$3,$4,$5,$6,'queued',$7)",[child,id,wid,projectId,position,JSON.stringify(route),item?.key??null]);
+        // D3: one zero-retry job per child, enqueued with its reservation; Start authorizes every child.
+        if(!await boss!.send(promptExecutionQueue,{executionId:child,comparisonId:id},{id:child,retryLimit:0,expireInSeconds:180,db:{executeSql:(text,values)=>tx.query(text,values)}}))throw new Error('Request could not be queued.');
       });
     }
-    if(boss&&!await boss.send(promptExecutionQueue,{comparisonId:id},{id,retryLimit:0,expireInSeconds:180,db:{executeSql:(text,values)=>client.query(text,values)}}))throw new Error('Comparison could not be queued.');
     if(q.recurring_occurrence_id){const linked=await client.query("UPDATE prompt_occurrence SET comparison_id=$2,status='started',reason=NULL WHERE id=$1 AND quote_id=$3 AND request_key=$4 AND status='quoted' AND comparison_id IS NULL",[q.recurring_occurrence_id,id,q.id,requestKey]);if(linked.rowCount!==1)throw new FoundationError(409,'This recurring occurrence changed. Reload its saved status.');}
     return boundedPromptRead({role,comparison:await comparisonDto(client,projectId,id,userId,role,true,true)});
   });

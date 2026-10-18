@@ -25,7 +25,8 @@ export async function runKeyword(id,mode='ok'){
 }
 export async function runPrompt(id,mode='ok'){
   await ownedRun('prompt_comparison',id);await executePromptComparison(id,createSyntheticProviderFetch({allowDispatch:true,promptMode:mode}));
-  await (await getBoss()).complete(promptExecutionQueue,id,null,{includeQueued:true});
+  const children=(await getDatabase().pool.query('SELECT id FROM prompt_execution WHERE comparison_id=$1',[id])).rows.map(row=>row.id);
+  if(children.length)await (await getBoss()).complete(promptExecutionQueue,children,null,{includeQueued:true});
 }
 const html=links=>`<!doctype html><html><head><title>Synthetic technical page</title><meta name="description" content="${'Useful description '.repeat(8)}"></head><body><h1>Observed fixture page</h1><p>${'word '.repeat(170)}</p>${links}</body></html>`;
 export async function runAudit(id,{route:customRoute}={}){
