@@ -43,7 +43,7 @@ function cli(command:'migrate'|'rekey',expected:number){
   const block='data:text/javascript,'+encodeURIComponent("globalThis.fetch=async()=>{throw new Error('External traffic disabled in migration test');}");
   const result=spawnSync(process.execPath,['--import',block,join(process.cwd(),'src/server/cli.ts'),command],{cwd:process.cwd(),env:process.env,encoding:'utf8',timeout:45_000,maxBuffer:256_000,windowsHide:true});
   assert.equal(result.status,expected,stage+': CLI exit');
-  for(const secret of [config.databaseUrl,config.bootstrapToken,original.auth,process.env.AUTH_SECRET,process.env.CREDENTIAL_KEYS])if(secret)assert.ok(!(result.stdout+result.stderr).includes(secret),'CLI leaked secret configuration.');
+  for(const secret of [config.databaseUrl,original.auth,process.env.AUTH_SECRET,process.env.CREDENTIAL_KEYS])if(secret)assert.ok(!(result.stdout+result.stderr).includes(secret),'CLI leaked secret configuration.');
 }
 type Fixture={owner:string;workspace:string;project:string;connection:string;request:KeywordRequest};
 async function fixture():Promise<Fixture>{

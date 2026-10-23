@@ -20,7 +20,7 @@ export async function seedFixture(){
   await mkdir(evidenceDir,{recursive:true});
   await writeFile(resolve(evidenceDir,'manifest.json'),JSON.stringify({...identity,synthetic:true},null,2)+'\n',{flag:'wx',mode:0o600});
   const owner={email:randomUUID()+'@conversions.integration.test',password:randomBytes(24).toString('base64url')};
-  await claimInstallation({token:process.env.BOOTSTRAP_TOKEN,name:'Synthetic conversion owner',workspaceName:'Conversion browser workspace',...owner});
+  await claimInstallation({name:'Synthetic conversion owner',workspaceName:'Conversion browser workspace',...owner});
   owner.id=(await pool.query('SELECT id FROM "user" WHERE email=$1',[owner.email])).rows[0].id;
   const workspace=(await pool.query('SELECT w.id,w.name FROM workspace w JOIN membership m ON m.workspace_id=w.id WHERE m.user_id=$1',[owner.id])).rows[0];
   const otherWorkspace=(await createWorkspace(owner.id,{name:'Other conversion workspace'})).workspace;

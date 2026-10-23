@@ -8,7 +8,7 @@ import { clientLimitKey, clientRateKey, requestClientAddress, visitorRateKey } f
 import { getConfig } from '../src/server/config.ts';
 
 const appUrl = 'http://localhost:3000';
-const baseEnv = { APP_URL: appUrl, AUTH_SECRET: 'a'.repeat(32), BOOTSTRAP_TOKEN: 'b'.repeat(32), DATABASE_URL: 'postgresql://synthetic@localhost:5432/synthetic' };
+const baseEnv = { APP_URL: appUrl, AUTH_SECRET: 'a'.repeat(32), DATABASE_URL: 'postgresql://synthetic@localhost:5432/synthetic' };
 
 // Runs the check with a Request carrying a real loopback Node transport, as srvx supplies it.
 async function withTransport(check: (fromPeer: (path: string, init?: RequestInit) => Request) => Promise<void>) {

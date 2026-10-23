@@ -43,7 +43,7 @@ function runMigrate(expected: number, cwd = checkout) {
   migrationCliExits.push(expected);
   const result = spawnSync(process.execPath, [cli, 'migrate'], { cwd, env: process.env, encoding: 'utf8', timeout: 45_000, maxBuffer: 512_000 });
   assert.equal(result.status, expected, `${stage}: migration CLI exit status`);
-  for (const secret of [config.authSecret, config.bootstrapToken, config.databaseUrl]) {
+  for (const secret of [config.authSecret, config.databaseUrl]) {
     assert.ok(!(result.stdout + result.stderr).includes(secret), 'Migration output must not expose configuration secrets.');
   }
   return result.stdout + result.stderr;

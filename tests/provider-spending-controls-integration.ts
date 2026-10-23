@@ -26,7 +26,7 @@ export async function runProviderSpendingControlsChecks(){
   globalThis.fetch=async()=>{outgoing++;throw new Error('External requests forbidden in spending-controls acceptance.');};
   try{
     const email=randomUUID()+'@spending.test',password=randomBytes(24).toString('base64url');
-    await claimInstallation({token:config.bootstrapToken,name:'Spending fixture',email,password,workspaceName:'Spending fixture'});
+    await claimInstallation({name:'Spending fixture',email,password,workspaceName:'Spending fixture'});
     const owner=(await pool.query('SELECT id FROM "user" WHERE email=$1',[email])).rows[0].id as string;
     const login=await handleApi(new Request(config.appUrl+'/api/auth/sign-in/email',{method:'POST',headers:{origin:config.appUrl,'content-type':'application/json'},body:JSON.stringify({email,password})}));
     assert.equal(login.status,200);const cookie=login.headers.getSetCookie().map(v=>v.split(';')[0]).join('; ');assert.ok(cookie);

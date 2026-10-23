@@ -35,7 +35,7 @@ async function fresh(view='context'){
   try{
    if(url.origin!==origin){unexpected.push(url.href);return route.abort();}if(!path.startsWith('/api/'))return req.method()==='GET'?route.continue():route.abort();
    assert.ok(++apiRequests<=100,'100-request cap');let body,status=200;
-   if(path==='/api/status')body={configured:true,appUrl:origin};
+   if(path==='/api/session')body={setupRequired:false,appUrl:origin,user:null};
    else if(path==='/api/me'){status=signedOut?401:200;body=signedOut?{error:'Synthetic session ended'}:{user,instanceOperator:false,workspaces:[{id:W,name:'Synthetic workspace',role:'owner'}]};}
    else if(path==='/api/account/preferences')body={version:'account-preferences-v1',user,preferences:{revision:1,timeZone:'UTC',locale:'en-US',theme:'light',updatedAt:stamp}};
    else if(path==='/api/auth/oidc/providers')body={providers:[]};

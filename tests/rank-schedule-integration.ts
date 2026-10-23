@@ -31,7 +31,7 @@ try{
   const noNetwork='data:text/javascript,'+encodeURIComponent("globalThis.fetch=async()=>{throw new Error('Provider traffic forbidden in migration');}");
   const migrated=spawnSync(process.execPath,['--import',noNetwork,join(process.cwd(),'src/server/cli.ts'),'migrate'],{cwd:process.cwd(),env:process.env,encoding:'utf8',timeout:45_000,maxBuffer:256_000,windowsHide:true});
   assert.equal(migrated.status,0,'Base migration failed (inspect privately; configuration is never printed).');
-  for(const secret of [config.databaseUrl,config.authSecret,config.bootstrapToken,process.env.CREDENTIAL_KEYS])if(secret)assert.ok(!(migrated.stdout+migrated.stderr).includes(secret),'Migration output exposed private configuration.');
+  for(const secret of [config.databaseUrl,config.authSecret,process.env.CREDENTIAL_KEYS])if(secret)assert.ok(!(migrated.stdout+migrated.stderr).includes(secret),'Migration output exposed private configuration.');
   await assertSchema();
   assert.deepEqual((await pool.query<{version:string}>('SELECT version FROM schema_version ORDER BY version')).rows.map(row=>row.version),versions);
   console.log(`PASS fresh registered${versions[0]}–${versions.at(-1)} migration through production CLI`);

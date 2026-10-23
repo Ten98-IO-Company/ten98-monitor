@@ -73,7 +73,7 @@ export function validateOptions(options) {
 export function createSetup(directory, options) {
   const v = validateOptions(options);
   const hex = () => randomBytes(32).toString('hex');
-  const [postgres, auth, bootstrap] = [hex(), hex(), hex()];
+  const [postgres, auth] = [hex(), hex()];
   const keyring = JSON.stringify({ v1: randomBytes(32).toString('base64') });
   const content = [
     `DEPLOYMENT_MODE=${v.mode}`,
@@ -83,7 +83,6 @@ export function createSetup(directory, options) {
     `APP_PORT=${v.port}`,
     `POSTGRES_PASSWORD=${postgres}`,
     `AUTH_SECRET=${auth}`,
-    `BOOTSTRAP_TOKEN=${bootstrap}`,
     `DATABASE_URL=postgresql://ten98:${postgres}@postgres:5432/ten98`,
     'ARTIFACT_DIR=./data/artifacts',
     `CREDENTIAL_KEYS='${keyring}'`,
@@ -120,8 +119,9 @@ export function readSetup(directory) {
       project: env.COMPOSE_PROJECT_NAME,
     });
     if (env.TEN98_IMAGE !== `ten98-monitor:${v.project}`) fail('bad image selection');
-    const secrets = [env.POSTGRES_PASSWORD, env.AUTH_SECRET, env.BOOTSTRAP_TOKEN];
-    if (secrets.some((s) => typeof s !== 'string' || !SECRET_RE.test(s)) || new Set(secrets).size !== 3) {
+    // An older file's BOOTSTRAP_TOKEN is ignored: the first account created in the app becomes the owner.
+    const secrets = [env.POSTGRES_PASSWORD, env.AUTH_SECRET];
+    if (secrets.some((s) => typeof s !== 'string' || !SECRET_RE.test(s)) || new Set(secrets).size !== 2) {
       fail('bad secrets');
     }
     const keys = JSON.parse(env.CREDENTIAL_KEYS ?? '');
@@ -168,7 +168,7 @@ if (import.meta.main) {
       const [mode, url, port, project] = rest;
       const path = createSetup(directory, { mode, url, port, project });
       console.log(`Created ${path}; POSIX mode 0600 requested. Check host access permissions.`);
-      console.log('read BOOTSTRAP_TOKEN privately; never share, print, or commit it');
+      console.log('the first account created in the app becomes the owner; create it before sharing the URL');
     } else if (cmd === 'inspect' && rest.length === 0) {
       const v = readSetup(directory);
       console.log(`${v.mode} ${v.url} ${v.port} ${v.project}`);

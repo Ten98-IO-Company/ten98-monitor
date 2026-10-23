@@ -41,7 +41,7 @@ export async function runDelayedApiKeyReadChecks(){
   });
   await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(3111,'127.0.0.1',resolve);});
   try{
-    const setup=await http('/api/setup',{}, {token:config.bootstrapToken,name:'Synthetic key reader',email:randomUUID()+'@key-reads.test',password:randomBytes(32).toString('hex'),workspaceName:'Delayed key reads'});
+    const setup=await http('/api/setup',{}, {name:'Synthetic key reader',email:randomUUID()+'@key-reads.test',password:randomBytes(32).toString('hex'),workspaceName:'Delayed key reads'});
     assert.equal(setup.status,200);const cookie=setup.cookies.map(value=>value.split(';')[0]).join('; ');assert.ok(cookie);
     const owner=(await pool.query("SELECT user_id,workspace_id FROM membership WHERE role='owner'")).rows[0],workspace=owner.workspace_id as string,ownerId=owner.user_id as string;
     const project=randomUUID(),visitor='a'.repeat(64),visit='b'.repeat(64),day=new Date().toISOString().slice(0,10);

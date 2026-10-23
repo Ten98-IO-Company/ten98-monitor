@@ -38,7 +38,7 @@ function grant(id=grantId){return{id,label:'Saved report',scope,sections:['summa
 function ack(call,operation,asset,appliedRevision,extra={}){return{workspaceId:workspace,role:state.role,ack:{requestId:call.body.requestId,operation,assetId:asset?.id??call.id,appliedRevision,...extra.shareId?{shareId:extra.shareId}:{}},item:asset,deleted:asset===null,replayed:false,...Object.hasOwn(extra,'share')?{share:extra.share}:{}};}
 async function normal(route,call){
  const {path,method,params,body}=call;
- if(method==='GET'&&path==='/api/status')return reply(route,{configured:true,appUrl:origin});
+ if(method==='GET'&&path==='/api/session')return reply(route,{setupRequired:false,appUrl:origin,user:null});
  if(method==='GET'&&path==='/api/me')return reply(route,{user:{id:user,name:'Synthetic owner',email:'synthetic@example.org'},instanceOperator:false,workspaces:[{id:workspace,name:'Synthetic workspace',role:state.role}]});
  if(method==='GET'&&path==='/api/account/preferences')return reply(route,{version:'account-preferences-v1',user:{id:user,name:'Synthetic owner',email:'synthetic@example.org'},preferences:{revision:0,timeZone:'UTC',locale:'en-US',theme:'light',updatedAt:null}});
  if(method==='GET'&&path==='/api/workspaces/'+workspace+'/projects')return reply(route,{projects:[]});

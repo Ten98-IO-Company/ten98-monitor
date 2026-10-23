@@ -13,7 +13,7 @@ test('collector aliases are optional and accept single safe absolute paths', () 
   assert.deepEqual(collectorAliases(env), { collectPath: '/t/e', scriptPath: '/stats.js' });
   assert.deepEqual(collectorAliases({ COLLECT_PATH_ALIAS: '/Metrics_2/ingest-v1', TRACKER_SCRIPT_ALIAS: '/js/site-1.js' }), { collectPath: '/Metrics_2/ingest-v1', scriptPath: '/js/site-1.js' });
   assert.equal(collectorAliases({ COLLECT_PATH_ALIAS: '/' + 'a'.repeat(64) }).collectPath?.length, 65);
-  const base = { APP_URL: 'https://discover.example', DATABASE_URL: 'postgresql://u:p@db/x', AUTH_SECRET: 'a'.repeat(32), BOOTSTRAP_TOKEN: 'b'.repeat(32) };
+  const base = { APP_URL: 'https://discover.example', DATABASE_URL: 'postgresql://u:p@db/x', AUTH_SECRET: 'a'.repeat(32) };
   const config = getConfig({ ...base, ...env });
   assert.equal(config.collectPathAlias, '/t/e'); assert.equal(config.trackerScriptAlias, '/stats.js');
   assert.throws(() => getConfig({ ...base, COLLECT_PATH_ALIAS: '/api/collect' }), /COLLECT_PATH_ALIAS collides/);

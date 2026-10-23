@@ -6,7 +6,7 @@ Use Node 24, installed application dependencies, an installed Playwright module/
 
 Supply an explicit, ignored environment file (called `.env.research-ui-test` in the commands below) containing:
 
-- The ordinary application configuration, with fresh synthetic `AUTH_SECRET`, `BOOTSTRAP_TOKEN`, `CREDENTIAL_KEYS` and active key ID; no production credentials.
+- The ordinary application configuration, with fresh synthetic `AUTH_SECRET`, `CREDENTIAL_KEYS` and active key ID; no production credentials.
 - `TEN98_INTEGRATION_TEST=1` and `TEN98_RESEARCH_BROWSER=1`.
 - `DATABASE_URL` pointing to loopback PostgreSQL, with a database named `ten98_research_ui_` followed by lowercase letters, digits or underscores. Query parameters and fragments are rejected because PostgreSQL connection options can override the URL hostname. Provisioning, migration and later cleanup are the operator's separate actions; these scripts do none of them.
 - Equal `APP_URL` and `BASE_URL` loopback origins, for example `http://localhost:3049`, plus corresponding `HOST=127.0.0.1` and `PORT=3049`. Verify the port is unused first.

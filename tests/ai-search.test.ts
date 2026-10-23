@@ -213,8 +213,8 @@ test('AI-only account recovery fails closed and historical pre42 checks never qu
  const corrupt=await check({present:false,applied:true},true);assert.equal(corrupt.length,2);assert.equal(corrupt.some(s=>s.includes('FROM ai_search_quote')),false);
 });
 test('provider deadlines are explicit only and precede the first workspace lock without changing defaults',async()=>{
- const names=['APP_URL','DATABASE_URL','AUTH_SECRET','BOOTSTRAP_TOKEN','ANALYTICS_NETWORK_MODE'] as const,saved=Object.fromEntries(names.map(k=>[k,process.env[k]]));
- Object.assign(process.env,{APP_URL:'http://localhost:3099',DATABASE_URL:'postgres://127.0.0.1:55501/ten98_ai_search_unit',AUTH_SECRET:'a'.repeat(64),BOOTSTRAP_TOKEN:'b'.repeat(64),ANALYTICS_NETWORK_MODE:'off'});
+ const names=['APP_URL','DATABASE_URL','AUTH_SECRET','ANALYTICS_NETWORK_MODE'] as const,saved=Object.fromEntries(names.map(k=>[k,process.env[k]]));
+ Object.assign(process.env,{APP_URL:'http://localhost:3099',DATABASE_URL:'postgres://127.0.0.1:55501/ten98_ai_search_unit',AUTH_SECRET:'a'.repeat(64),ANALYTICS_NETWORK_MODE:'off'});
  const pool=getDatabase().pool,connect=pool.connect,workspace=randomUUID(),user=randomUUID(),request=randomUUID();let statements:string[]=[];
  const client={release(){},query:async(sql:string)=>{statements.push(sql);if(sql.includes('SELECT role FROM membership'))return{rows:[{role:'editor'}]};if(sql.includes('SELECT * FROM provider_request'))return{rows:[{id:request,workspace_id:workspace,user_id:user,status:'reserved',connection_id:randomUUID(),connection_revision:1,estimate_micros:'4000'}]};if(sql.includes('FROM provider_connection'))return{rows:[{revoked_at:null,revision:1}]};if(sql.includes('AS uncertain'))return{rows:[{month:'2026-10-01',paused:false,uncertain:false}]};return{rows:[]};}};// Owner decision D3: the gate reads the connection, then month/pause/uncertainty; there is no cap read.
  pool.connect=(async()=>client) as unknown as typeof pool.connect;

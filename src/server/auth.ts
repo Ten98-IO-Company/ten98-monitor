@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { hashPassword } from 'better-auth/crypto'
@@ -102,8 +102,10 @@ export class FoundationError extends Error {
   }
 }
 
+// The first sign-up claims an unclaimed installation; there is no setup token (owner decision, 2026-10-23).
+// A page cached across the upgrade, or @ten98/ui 0.23.0's form, may still send `token`: accept it and discard it unread.
 const claimInput = z.object({
-  token: z.string().min(1).max(512),
+  token: z.string().max(512).optional(),
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().toLowerCase().max(254).email(),
   password: z.string().min(12).max(128),
@@ -118,14 +120,7 @@ export async function claimInstallation(input: z.input<typeof claimInput>): Prom
     throw new FoundationError(400, 'Check your setup details. Use a valid email and a password between 12 and 128 characters.')
   }
 
-  const details = result.data
-  const expectedToken = getConfig().bootstrapToken
-  const providedDigest = createHash('sha256').update(details.token).digest()
-  const expectedDigest = createHash('sha256').update(expectedToken).digest()
-  if (!expectedToken || !timingSafeEqual(providedDigest, expectedDigest)) {
-    throw new FoundationError(403, 'The setup token is not valid.')
-  }
-
+  const { token: _ignoredToken, ...details } = result.data
   const client = await getDatabase().pool.connect()
   try {
     await client.query('BEGIN')

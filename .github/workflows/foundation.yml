@@ -55,7 +55,7 @@ jobs:
           import { randomBytes } from 'node:crypto';
           import { appendFileSync, mkdirSync } from 'node:fs';
           import { join } from 'node:path';
-          for (const key of ['AUTH_SECRET', 'BOOTSTRAP_TOKEN']) {
+          for (const key of ['AUTH_SECRET']) {
             const value = randomBytes(32).toString('hex');
             console.log(`::add-mask::${value}`);
             appendFileSync(process.env.GITHUB_ENV, `${key}=${value}\n`);

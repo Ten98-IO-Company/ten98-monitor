@@ -5,8 +5,8 @@ import {decimalSumMicros,decimalText,executionInput,executionBody,parseOpenRoute
 import {parseRoute,parseExecutionOutcome,readOpenRouterRoutes,requestPromptExecution,reconcileOpenRouter,executionActor,openRouterRefusal} from '../src/server/openrouter.ts';
 import {openRouterTextProfile} from '../src/lib/openrouter-models.ts';
 import {refreshOpenRouterCatalog} from '../src/server/openrouter-models.ts';
-process.env.AUTH_SECRET='prompt-unit-auth-only-'.repeat(4);process.env.BOOTSTRAP_TOKEN='prompt-unit-bootstrap-only-'.repeat(4);process.env.DATABASE_URL='postgresql://synthetic:synthetic@localhost/unused_prompt_unit';
-delete process.env.AUTH_SECRET_FILE;delete process.env.BOOTSTRAP_TOKEN_FILE;delete process.env.DATABASE_URL_FILE;
+process.env.AUTH_SECRET='prompt-unit-auth-only-'.repeat(4);process.env.DATABASE_URL='postgresql://synthetic:synthetic@localhost/unused_prompt_unit';
+delete process.env.AUTH_SECRET_FILE;delete process.env.DATABASE_URL_FILE;
 const model='openai/gpt-4o-mini' as const,now=new Date('2026-10-13T12:00:00Z'),id=randomUUID(),actor=executionActor(randomUUID());
 // Current public OpenAI endpoint shape: optional request omitted, null input capacity and numeric discount.
 function endpoint(){return {data:{id:model,endpoints:[{tag:'openai',provider_name:'OpenAI',model_id:model,status:0,context_length:128000,max_prompt_tokens:null,max_completion_tokens:16384,supported_parameters:['max_tokens'],pricing:{prompt:'0.00000015',completion:'0.0000006',discount:0,input_cache_read:'0.000000075'}}]}};}

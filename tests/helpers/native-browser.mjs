@@ -3,7 +3,7 @@
 // Suites never share an installation: prerequisite data must be seeded by the suite or this runner, not left by another suite.
 // Needs a built .output, PLAYWRIGHT_MODULE and a local PostgreSQL (NATIVE_BROWSER_POSTGRES, default postgres://ten98@127.0.0.1:5432).
 // Each run creates, migrates and finally drops its own database; it never touches a saved installation. Every FLAG is set to 1.
-// The installation is claimed through /api/setup unless --unclaimed is given (suites that claim it themselves). Suites that
+// The installation is claimed through /api/auth/setup unless --unclaimed is given (suites that claim it themselves). Suites that
 // pin their database name prefix or port get --database (name = prefix + 12 hex) and --database-port (a local TCP proxy).
 // --no-worker skips the queue worker for suites that start their own worker with a synthetic provider transport;
 // --self-hosted starts neither server nor worker and leaves the installation unclaimed, for suites that host the app themselves.
@@ -23,7 +23,7 @@ if(!['localhost','127.0.0.1','[::1]'].includes(postgres.hostname))throw new Erro
 const port=Number(process.env.NATIVE_BROWSER_PORT??3197),origin=`http://127.0.0.1:${port}`,hex=bytes=>randomBytes(bytes).toString('hex');
 const database=`${prefix}_${hex(6)}`,databaseUrl=new URL(postgres);databaseUrl.pathname='/'+database;if(proxyPort!==null){databaseUrl.hostname='127.0.0.1';databaseUrl.port=String(proxyPort);}
 const out=`private/native-browser/${basename(suite).replace(/\.(mjs|ts)$/,'')}-${hex(4)}`;
-const env={...process.env,NODE_ENV:'production',AUTH_SECRET:hex(32),BOOTSTRAP_TOKEN:hex(32),CREDENTIAL_KEYS:JSON.stringify({v1:randomBytes(32).toString('base64')}),CREDENTIAL_ACTIVE_KEY:'v1',
+const env={...process.env,NODE_ENV:'production',AUTH_SECRET:hex(32),CREDENTIAL_KEYS:JSON.stringify({v1:randomBytes(32).toString('base64')}),CREDENTIAL_ACTIVE_KEY:'v1',
   APP_URL:origin,BASE_URL:origin,HOST:'127.0.0.1',PORT:String(port),DATABASE_URL:databaseUrl.href,ANALYTICS_NETWORK_MODE:'direct',TEN98_INTEGRATION_TEST:'1',OUT_DIR:out,BROWSER_ARTIFACT_DIR:out,
   ...Object.fromEntries(flags.map(flag=>[flag,'1']))};
 
@@ -43,10 +43,10 @@ try{
   if(await run(process.execPath,['src/server/cli.ts','migrate']))throw new Error('Migration failed.');
   if(!selfHosted){start(['.output/server/index.mjs'],'server');if(!options.has('no-worker'))start(['src/server/cli.ts','worker'],'worker');}
   let ready=selfHosted;
-  for(let attempt=0;attempt<80&&!ready;attempt++){ready=await fetch(origin+'/api/status').then(response=>response.ok,()=>false);if(!ready)await new Promise(resolve=>setTimeout(resolve,500));}
+  for(let attempt=0;attempt<80&&!ready;attempt++){ready=await fetch(origin+'/api/session').then(response=>response.ok,()=>false);if(!ready)await new Promise(resolve=>setTimeout(resolve,500));}
   if(!ready)throw new Error('The server did not become ready.');
   if(!unclaimed){
-    const response=await fetch(origin+'/api/setup',{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify({token:env.BOOTSTRAP_TOKEN,name:'Native browser owner',email:`owner-${hex(4)}@native-browser.test`,password:hex(16),workspaceName:'Native browser workspace'})});
+    const response=await fetch(origin+'/api/auth/setup',{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify({name:'Native browser owner',email:`owner-${hex(4)}@native-browser.test`,password:hex(16),workspaceName:'Native browser workspace'})});
     if(!response.ok)throw new Error(`Owner setup failed with ${response.status}.`);
   }
   code=await run(process.execPath,[suite]);

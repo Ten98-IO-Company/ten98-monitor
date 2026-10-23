@@ -125,7 +125,7 @@ try {
   });
   assert.equal(child.status, 0, 'Offline CLI must work without opening the credential keyring.');
   assert.match(child.stdout, /Restore spending quarantine applied:/);
-  for (const value of [config.databaseUrl, config.authSecret, config.bootstrapToken, JSON.stringify(encrypted)]) assert.ok(!(child.stdout + child.stderr).includes(value));
+  for (const value of [config.databaseUrl, config.authSecret, JSON.stringify(encrypted)]) assert.ok(!(child.stdout + child.stderr).includes(value));
   assert.equal((await pool.query('SELECT bool_and(paused) AS paused FROM workspace_budget')).rows[0].paused, true);
   console.log('PASS real CLI quarantines without provider decryption, network access or secret output');
 } finally {

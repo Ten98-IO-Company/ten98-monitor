@@ -1,7 +1,7 @@
 // SYNTHETIC navigation-review session for the opt-in shell and rank-loading browser suites.
 // Nothing here is real customer, provider or installation data and no secret is committed:
 // the suites need a real signed-in session, so this module provisions one at run time against a
-// FRESH, UNCLAIMED, migrated local app (BASE_URL + that server's BOOTSTRAP_TOKEN). It claims a
+// FRESH, UNCLAIMED, migrated local app (BASE_URL); its first sign-up claims the installation. It claims a
 // throwaway owner, creates one synthetic website, invites a throwaway viewer and accepts the
 // invitation. Passwords are random per run, held in memory only, and the returned session is a
 // Playwright storage-state object (never written to disk).
@@ -26,8 +26,6 @@ export async function loadNavigationSession({baseUrl, override} = {}) {
     assert.ok(insidePrivate(state), 'Authentication state must remain in private artifacts.');
     return {...saved, storageState: state};
   }
-  const token = process.env.BOOTSTRAP_TOKEN;
-  assert.ok(token, "Set BOOTSTRAP_TOKEN to the fresh local server's setup token (or supply TEN98_SHELL_FIXTURE).");
   assert.ok(baseUrl, 'baseUrl required');
   const secret = () => randomBytes(24).toString('base64url');
   const owner = {email: 'owner@navigation-review.test', password: secret()}, viewer = {email: 'viewer@navigation-review.test', password: secret()};
@@ -40,7 +38,7 @@ export async function loadNavigationSession({baseUrl, override} = {}) {
   const ownerApi = await request.newContext({baseURL: baseUrl});
   const viewerApi = await request.newContext({baseURL: baseUrl});
   try {
-    await call(ownerApi, '/api/setup', {token, name: 'Navigation owner', ...owner, workspaceName: 'Navigation review workspace'}, 200);
+    await call(ownerApi, '/api/auth/setup', {name: 'Navigation owner', ...owner, workspaceName: 'Navigation review workspace'}, 200);
     const me = await (await ownerApi.get('/api/me')).json();
     const workspace = me.workspaces[0].id;
     assert.match(workspace, uuid);

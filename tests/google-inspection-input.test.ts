@@ -22,8 +22,8 @@ test('browser-safe inspection strings keep the existing exact UTF-16 and scalar 
 test('shared Google transport refuses malformed UTF-8 and preserves valid astral JSON without network',async()=>{
   const saved={...process.env};
   try{
-    for(const key of ['DATABASE_URL_FILE','AUTH_SECRET_FILE','BOOTSTRAP_TOKEN_FILE'])delete process.env[key];
-    Object.assign(process.env,{TEN98_INTEGRATION_TEST:'1',APP_URL:'http://127.0.0.1:3111',DATABASE_URL:'postgres://fixture:fixture@127.0.0.1:55501/ten98_gsc_pure_unused',AUTH_SECRET:'pure-fixture-not-a-secret-'.repeat(3),BOOTSTRAP_TOKEN:'pure-fixture-not-a-token-'.repeat(3)});
+    for(const key of ['DATABASE_URL_FILE','AUTH_SECRET_FILE'])delete process.env[key];
+    Object.assign(process.env,{TEN98_INTEGRATION_TEST:'1',APP_URL:'http://127.0.0.1:3111',DATABASE_URL:'postgres://fixture:fixture@127.0.0.1:55501/ten98_gsc_pure_unused',AUTH_SECRET:'pure-fixture-not-a-secret-'.repeat(3)});
     let calls=0;
     await withGoogleTransportForTests(async(target,init)=>{
       calls++;assert.equal(target,'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect');assert.equal(init.redirect,'error');assert.ok(init.signal);

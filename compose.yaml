@@ -32,7 +32,6 @@ x-app: &app
     DATABASE_URL: postgresql://ten98:${POSTGRES_PASSWORD}@postgres:5432/ten98
     APP_URL: ${APP_URL:-http://localhost:3000}
     AUTH_SECRET: ${AUTH_SECRET:?Run pnpm run setup:local first}
-    BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:?Run pnpm run setup:local first}
     CREDENTIAL_KEYS: ${CREDENTIAL_KEYS:-}
     CREDENTIAL_ACTIVE_KEY: ${CREDENTIAL_ACTIVE_KEY:-}
     ANALYTICS_NETWORK_MODE: ${ANALYTICS_NETWORK_MODE:-off}

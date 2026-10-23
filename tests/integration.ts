@@ -138,6 +138,7 @@ try {
     await pool.query('UPDATE schema_version SET checksum=$1 WHERE version=$2', ['integration-mismatched-checksum', '0001']);
     await expectStatus('/api/health/ready', 503);
     await expectStatus('/api/status', 503);
+    await expectStatus('/api/session', 503);
     await expectStatus('/api/health/live', 200);
   } finally {
     await pool.query('UPDATE schema_version SET checksum=$1 WHERE version=$2', [savedSchema.rows[0].checksum, '0001']);
@@ -145,36 +146,63 @@ try {
   await expectStatus('/api/health/ready', 200);
   console.log('PASS schema mismatch blocks readiness and recovers after restoration');
 
-  stage = 'bootstrap validation and atomic rollback';
+  stage = 'unclaimed installation reports setup and refuses public sign-up';
   const password = randomBytes(24).toString('base64url');
-  const claim = { token: config.bootstrapToken, name: ' Test owner ', email: ' OWNER@integration.test ', password, workspaceName: 'Primary workspace' };
-  await expectStatus('/api/setup', 403, { method: 'POST', body: { ...claim, token: 'wrong-token' } });
-  await expectStatus('/api/setup', 400, { method: 'POST', body: { ...claim, password: 'short' } });
-  await expectStatus('/api/setup', 403, { method: 'POST', body: claim, origin: 'https://untrusted.integration.test' });
+  const unclaimedSession = await expectStatus('/api/session', 200);
+  const unclaimedStatus = await expectStatus('/api/status', 200);
+  assert.equal(unclaimedSession.body.setupRequired, true, 'An unclaimed installation requires setup.');
+  assert.equal(unclaimedSession.body.user, null, 'The session read reveals no user when signed out.');
+  assert.equal(unclaimedStatus.body.configured, false, 'The status alias reports an unclaimed installation.');
+  const { setupRequired: _setupRequired, user: _noUser, ...sessionInstallation } = unclaimedSession.body;
+  const { configured: _configured, ...statusInstallation } = unclaimedStatus.body;
+  assert.deepEqual(sessionInstallation, statusInstallation, 'The canonical session read and the status alias report the same installation.');
+  // Only the setup route creates the first user: Better Auth's own sign-up stays closed even while unclaimed.
+  await expectStatus('/api/auth/sign-up/email', 404, { method: 'POST', body: { name: 'Early sign-up', email: 'early@integration.test', password } });
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM "user"')).rows[0].n, 0, 'A refused sign-up creates no user.');
+  console.log('PASS unclaimed installation requires setup and public sign-up stays closed');
+
+  stage = 'first sign-up validation and atomic rollback';
+  const claim = { name: ' Test owner ', email: ' OWNER@integration.test ', password, workspaceName: 'Primary workspace' };
+  for (const path of ['/api/auth/setup', '/api/setup']) {
+    await expectStatus(path, 400, { method: 'POST', body: { ...claim, password: 'short' } });
+    // A leftover `token` is tolerated, but every other unknown field is still refused.
+    await expectStatus(path, 400, { method: 'POST', body: { ...claim, token: 'leftover', password: 'short' } });
+    await expectStatus(path, 400, { method: 'POST', body: { ...claim, unexpected: true } });
+    await expectStatus(path, 403, { method: 'POST', body: claim, origin: 'https://untrusted.integration.test' });
+  }
   // Force a late failure after user/account writes to prove bootstrap is all-or-nothing.
   await pool.query("ALTER TABLE workspace ADD CONSTRAINT integration_reject_claim CHECK(name <> 'reject-install')");
   try {
-    await expectStatus('/api/setup', 500, { method: 'POST', body: { ...claim, workspaceName: 'reject-install' } });
+    await expectStatus('/api/auth/setup', 500, { method: 'POST', body: { ...claim, workspaceName: 'reject-install' } });
     const rolledBack = await pool.query(`SELECT (SELECT count(*) FROM "user")::int AS users,
-      (SELECT count(*) FROM account)::int AS accounts, (SELECT claimed FROM installation WHERE id='instance') AS claimed`);
+      (SELECT count(*) FROM account)::int AS accounts, (SELECT count(*) FROM instance_operator)::int AS operators,
+      (SELECT claimed FROM installation WHERE id='instance') AS claimed`);
     assert.equal(rolledBack.rows[0].users, 0, 'Failed setup must leave no owner.');
     assert.equal(rolledBack.rows[0].accounts, 0, 'Failed setup must leave no credentials.');
+    assert.equal(rolledBack.rows[0].operators, 0, 'Failed setup must leave no instance operator.');
     assert.equal(rolledBack.rows[0].claimed, false, 'Failed setup must remain claimable.');
+    assert.equal((await expectStatus('/api/session', 200)).body.setupRequired, true, 'Failed setup still requires setup.');
   } finally {
     await pool.query('ALTER TABLE workspace DROP CONSTRAINT integration_reject_claim');
   }
 
   stage = 'racing installation claims';
-  const competitors = [claim, { ...claim, email: ' OTHER-OWNER@integration.test ', name: 'Other owner' }];
-  const claims = await Promise.all(competitors.map((body) => request('/api/setup', { method: 'POST', body })));
+  // Without a setup token the first sign-up claims the installation; the canonical path races its alias.
+  // The second competitor carries a leftover setup token, as a page cached across the upgrade may send; it is ignored.
+  const competitors = [claim, { ...claim, token: 'leftover-cached-page-token', email: ' OTHER-OWNER@integration.test ', name: 'Other owner' }];
+  const claims = await Promise.all(competitors.map((body, index) => request(index ? '/api/setup' : '/api/auth/setup', { method: 'POST', body })));
   assert.deepEqual(claims.map((item) => item.response.status).sort(), [200, 409], 'Exactly one concurrent setup must succeed.');
   const winnerIndex = claims.findIndex((item) => item.response.status === 200);
+  assert.equal(claims[1 - winnerIndex].body.error, 'Setup is complete. Sign in with the owner account.', 'The losing claim explains that setup is complete.');
+  assert.equal(claims[1 - winnerIndex].cookie, '', 'The losing claim starts no session.');
   const ownerCookie = claims[winnerIndex].cookie;
   assert.ok(ownerCookie, 'Successful setup must sign the owner in.');
   const count = await pool.query(`SELECT (SELECT count(*) FROM "user")::int AS users,
     (SELECT count(*) FROM account)::int AS accounts, (SELECT count(*) FROM workspace)::int AS workspaces,
-    (SELECT count(*) FROM membership WHERE role='owner')::int AS owners`);
-  assert.deepEqual(count.rows[0], { users: 1, accounts: 1, workspaces: 1, owners: 1 });
+    (SELECT count(*) FROM membership WHERE role='owner')::int AS owners, (SELECT count(*) FROM instance_operator)::int AS operators`);
+  assert.deepEqual(count.rows[0], { users: 1, accounts: 1, workspaces: 1, owners: 1, operators: 1 });
+  const operator = await pool.query('SELECT o.user_id FROM instance_operator o JOIN membership m ON m.user_id=o.user_id AND m.role=\'owner\'');
+  assert.equal(operator.rowCount, 1, 'The first user is both instance operator and workspace owner.');
   const credential = await pool.query('SELECT a.password,u.email,u.name FROM account a JOIN "user" u ON u.id=a."userId"');
   assert.ok(await verifyPassword({ hash: credential.rows[0].password, password }), 'Owner password must use the supported Better Auth hash.');
   assert.ok(credential.rows[0].password !== password, 'Plaintext passwords must not be stored.');
@@ -182,10 +210,25 @@ try {
   const owner = await expectStatus('/api/me', 200, { cookie: ownerCookie });
   assert.equal(owner.body.workspaces.length, 1);
   assert.equal(owner.body.workspaces[0].role, 'owner');
+  assert.equal(owner.body.instanceOperator, true, 'The first user is the instance operator.');
+  const ownerSession = await expectStatus('/api/session', 200, { cookie: ownerCookie });
+  assert.equal(ownerSession.body.setupRequired, false);
+  assert.deepEqual(ownerSession.body.user, owner.body.user, 'The session read returns the signed-in user.');
+  const claimedSignedOut = await expectStatus('/api/session', 200);
+  assert.equal(claimedSignedOut.body.setupRequired, false);
+  assert.equal(claimedSignedOut.body.user, null, 'The session read reveals no user when signed out.');
+  assert.equal((await expectStatus('/api/status', 200)).body.configured, true);
   const workspaceA = owner.body.workspaces[0].id as string;
   await retainHistoricalAnalytics(workspaceA, ownerCookie);
-  await expectStatus('/api/setup', 409, { method: 'POST', body: claim });
+  // Setup allows 10 attempts per client in 15 minutes and this stage has used them; start a fresh window for the late claims.
+  await pool.query("DELETE FROM request_limit WHERE key LIKE 'setup:client:%'");
+  for (const path of ['/api/auth/setup', '/api/setup']) for (const token of [undefined, 'leftover-cached-page-token']) {
+    const late = await expectStatus(path, 409, { method: 'POST', body: { ...claim, email: 'late-owner@integration.test', ...token ? { token } : {} } });
+    assert.equal(late.body.error, 'Setup is complete. Sign in with the owner account.', 'A late claim gets the same refusal with or without a leftover token.');
+    assert.equal(late.cookie, '', 'A refused claim starts no session.');
+  }
   await expectStatus('/api/auth/sign-up/email', 404, { method: 'POST', body: { name: 'Unauthorized', email: 'unauthorized@integration.test', password } });
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM "user"')).rows[0].n, 1, 'Refused claims and sign-ups create no user.');
   await expectStatus('/api/auth/sign-in/email', 401, { method: 'POST', body: { email: credential.rows[0].email, password: `${password}wrong` } });
   console.log('PASS owner claim, atomic rollback, concurrency and signup boundary');
 

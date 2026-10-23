@@ -76,9 +76,11 @@ test('createSetup writes a private env with well-formed secrets', () => {
   const d = tmp();
   createSetup(d, GOOD);
   const env = parseEnv(readFileSync(join(d, '.env'), 'utf8'));
-  const secrets = [env.POSTGRES_PASSWORD, env.AUTH_SECRET, env.BOOTSTRAP_TOKEN];
+  const secrets = [env.POSTGRES_PASSWORD, env.AUTH_SECRET];
   assert.ok(secrets.every((s) => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s)));
-  assert.ok(new Set(secrets).size === 3);
+  assert.ok(new Set(secrets).size === 2);
+  // The first account created in the app becomes the owner; no setup token is generated.
+  assert.ok(!Object.hasOwn(env, 'BOOTSTRAP_TOKEN'));
   const keys = JSON.parse(env.CREDENTIAL_KEYS ?? '') as Record<string, string>;
   const values = Object.values(keys);
   assert.ok(values.length === 1 && Buffer.from(values[0], 'base64').length === 32);
@@ -106,6 +108,14 @@ test('readSetup returns only the four public fields', () => {
   createSetup(d, GOOD);
   const v = readSetup(d) as Record<string, unknown>;
   assert.deepEqual(Object.keys(v).sort(), ['mode', 'port', 'project', 'url']);
+  assert.ok(v.mode === GOOD.mode && v.url === GOOD.url && v.port === GOOD.port && v.project === GOOD.project);
+});
+
+test('an older env file that still defines BOOTSTRAP_TOKEN keeps working', () => {
+  const d = tmp();
+  createSetup(d, GOOD);
+  writeFileSync(join(d, '.env'), readFileSync(join(d, '.env'), 'utf8') + `BOOTSTRAP_TOKEN=${'c'.repeat(64)}\n`);
+  const v = readSetup(d) as Record<string, unknown>;
   assert.ok(v.mode === GOOD.mode && v.url === GOOD.url && v.port === GOOD.port && v.project === GOOD.project);
 });
 

@@ -48,7 +48,7 @@ image="ten98-monitor:$project"
 docker tag "$helper_image" "$image"
 # Compose gives inherited shell variables precedence over .env. Never mix an
 # unrelated shell's credentials/origin into this installation.
-unset APP_URL APP_PORT AUTH_SECRET BOOTSTRAP_TOKEN POSTGRES_PASSWORD DATABASE_URL ARTIFACT_DIR CREDENTIAL_KEYS CREDENTIAL_ACTIVE_KEY COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME
+unset APP_URL APP_PORT AUTH_SECRET POSTGRES_PASSWORD DATABASE_URL ARTIFACT_DIR CREDENTIAL_KEYS CREDENTIAL_ACTIVE_KEY COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME
 export TEN98_IMAGE="$image"
 compose() {
   if [ "$mode" = caddy ]; then
@@ -78,7 +78,7 @@ else
 fi
 compose exec -T worker node src/server/cli.ts diagnose worker
 printf 'Application and worker checks passed. Open %s\n' "$app_url"
-printf '%s\n' 'Read BOOTSTRAP_TOKEN privately from .env. Never paste it into logs or support requests.'
+printf '%s\n' 'Create the first account now: it becomes the owner. Until then anyone who can reach the app can claim it.'
 if [ "$mode" != local ]; then
   printf '%s\n' 'Public DNS, browser-trusted HTTPS and collection from another device still require the external checks in https://github.com/Ten98-IO-Company/ten98-discover/wiki/Deployment.'
 fi

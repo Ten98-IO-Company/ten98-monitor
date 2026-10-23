@@ -72,7 +72,7 @@ try{
   await writeFile(resolve(evidenceDir,'editor-acceptance.json'),JSON.stringify({status:'passed',completedAt:new Date().toISOString(),saved:false,viewports:[1440,360]},null,2)+'\n');
   console.log('PASS property transitions, preserved raw draft, labelled responsive editor and zero application writes');
 }catch(error){
-  const secrets=[fixture.owner.password,process.env.DATABASE_URL,process.env.AUTH_SECRET,process.env.BOOTSTRAP_TOKEN].filter(Boolean),redact=value=>secrets.reduce((text,secret)=>text.replaceAll(secret,'[redacted]'),String(value));
+  const secrets=[fixture.owner.password,process.env.DATABASE_URL,process.env.AUTH_SECRET].filter(Boolean),redact=value=>secrets.reduce((text,secret)=>text.replaceAll(secret,'[redacted]'),String(value));
   await mkdir(evidenceDir,{recursive:true});await writeFile(resolve(evidenceDir,'editor-failure.txt'),redact(stage+'\n'+(error.stack??error))+'\n',{mode:0o600});await page.screenshot({path:resolve(evidenceDir,'editor-failure.png'),fullPage:true}).catch(()=>{});
   console.error('FAIL conversions editor: '+stage+' (private evidence saved).');process.exitCode=1;
 }finally{await context.close();await browser.close();}

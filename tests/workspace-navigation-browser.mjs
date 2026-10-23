@@ -47,7 +47,7 @@ async function fresh(search,{single=false,role='owner',onboarding=null}={}){
    if(!path.startsWith('/api/'))return route.continue();
    requests.push({method:'GET',path,search:url.search});assert.ok(requests.length<=300,'At most300 closed synthetic API requests');if(/\/api\/workspaces\/[^/]+\/(boards|tracked-assets)/.test(path))assert.equal(url.searchParams.has('project'),false,'Workspace API has no project scope');let body,status=200;
    const workspaces=[{id:W,name:'Synthetic primary workspace',role},{id:W2,name:'Synthetic other workspace',role},{id:EMPTY,name:'Synthetic empty workspace',role}];
-   if(path==='/api/status')body={configured:true,appUrl:origin};
+   if(path==='/api/session')body={setupRequired:false,appUrl:origin,user:null};
    else if(path==='/api/me')body={user,instanceOperator:false,workspaces};
    else if(path==='/api/account/preferences')body={version:'account-preferences-v1',user,preferences:{revision:1,timeZone:'UTC',locale:'en-US',theme:'light',updatedAt:stamp}};
    else if(path==='/api/auth/oidc/providers')body={providers:[]};

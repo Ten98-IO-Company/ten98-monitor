@@ -1,6 +1,6 @@
 // Production-bundle acceptance; run only after the supervising agent releases port 3094.
 // TEN98_RANK_LOADING_BROWSER=1 PLAYWRIGHT_MODULE=<installed module> node tests/rank-loading-browser.mjs
-// Needs a fresh local app on BASE_URL (default http://localhost:3094) plus its BOOTSTRAP_TOKEN; tests/fixtures/navigation-review.mjs
+// Needs a fresh local app on BASE_URL (default http://localhost:3094), unclaimed; tests/fixtures/navigation-review.mjs
 // provisions the synthetic viewer session at run time (TEN98_SHELL_FIXTURE may name a private session JSON instead).
 // No database access, provisioning, real auth writes, rank checks, provider calls, or browser install.
 // Session races use explicitly intercepted auth/Me replies; they test client fencing, not server auth.

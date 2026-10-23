@@ -77,13 +77,13 @@ function RouteEntry(){
   return <AuthErrorBoundary fallback={{ brand: <AppBrand product='Discover' /> }}>{shared?<SharedTrackedAssetPanel search={location.searchStr} fragment={location.hash} entry={location.state.__TSR_key??location.href}/>:<App/>}</AuthErrorBoundary>
 }
 
-type Status = { configured: boolean; appUrl: string; trackerScript?: string; collectPath?: string | null }
+type Status = { setupRequired: boolean; appUrl: string; trackerScript?: string; collectPath?: string | null }
 type Workspace = { id: string; name: string; role: string; twoFactorLocked?: boolean }
 type Me = { user: { id: string; name: string; email: string }; instanceOperator: boolean; workspaces: Workspace[] }
 type Project = { id: string; name: string; origin: string; publicKey: string; eventCount: number; lastEventAt: string | null; retainedFrom: string | null }
 type EventsData = { events: { id: string; eventName: string; path: string; origin: string; receivedAt: string }[]; total: number; retainedFrom: string | null }
 type Job = { id: string; status: string; createdAt: string; completedAt: string | null; error: string | null }
-type SetupValues = { token: string; name: string; email: string; password: string; workspaceName: string }
+type SetupValues = { name: string; email: string; password: string; workspaceName: string }
 
 function fmt(iso: string): string {
   const d = new Date(iso)
@@ -260,10 +260,10 @@ function App() {
     const session = sessionGeneration.current, generation = ++bootGeneration.current
     const current = () => !signal?.aborted && sessionGeneration.current === session && bootGeneration.current === generation
     try {
-      const s = await api<Status>('/api/status', { signal })
+      const s = await api<Status>('/api/session', { signal })
       if (!current()) return
       setStatus(s)
-      if (!s.configured) { setPhase('setup'); return }
+      if (s.setupRequired) { setPhase('setup'); return }
       try {
         const m = await api<Me>('/api/me', { signal })
         if (current()) enterApp(m)
@@ -514,7 +514,7 @@ function App() {
 
   async function handleSetup(v: SetupValues) {
     const session = ++sessionGeneration.current
-    await api('/api/setup', { method: 'POST', body: v })
+    await api('/api/auth/setup', { method: 'POST', body: v })
     if (sessionGeneration.current === session) await boot()
   }
 
@@ -905,11 +905,12 @@ function OwnerForm({ onSetup, onSignInInstead }: { onSetup: (v: SetupValues) => 
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState(noOutcome)
   const [ownerExists, setOwnerExists] = useState(false)
-  // Remounting after success clears the setup token and password; the other entries are kept.
-  const [form, setForm] = useState({ generation: 0, name: '', email: '', workspaceName: '' })
+  // Remounting after success clears the password; the other entries are kept.
+  const [form, setForm] = useState({ generation: 0, name: '', email: '', workspaceName: 'My workspace' })
 
   async function submit(v: FirstUserSetupValues) {
-    const values = { token: v.token.trim(), name: v.name.trim(), email: v.email.trim(), password: v.password, workspaceName: (v.workspaceName ?? '').trim() }
+    // The first sign-up claims the installation; @ten98/ui 0.23.0 still renders a setup-token field, which is never sent.
+    const values = { name: v.name.trim(), email: v.email.trim(), password: v.password, workspaceName: (v.workspaceName ?? '').trim() }
     setBusy(true); setOutcome(noOutcome); setOwnerExists(false)
     setForm(f => ({ ...f, name: values.name, email: values.email, workspaceName: values.workspaceName }))
     try {
@@ -922,7 +923,8 @@ function OwnerForm({ onSetup, onSignInInstead }: { onSetup: (v: SetupValues) => 
   }
 
   return <FirstUserSetupFlow key={form.generation} brand={<AppBrand product='Discover' />} aside={authStory} label='Account access' title='Create owner account'
-    description='Create the owner account and its default workspace. The setup token comes from your server configuration.'
+    description='The first account becomes the owner of this installation and its default workspace.'
+    tokenHint='Not used. Enter any value; this field is being removed.'
     workspaceName passwordPolicy={{ minLength: 12, maxLength: 128, hint: 'At least 12 characters.' }}
     defaultValues={{ name: form.name, email: form.email, workspaceName: form.workspaceName }}
     busy={busy} error={outcome.error || undefined} unconfirmed={outcome.unconfirmed || undefined}

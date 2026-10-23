@@ -33,7 +33,7 @@ export async function runMcpChecks(){
   });
   await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(3111,'127.0.0.1',resolve);});
   try{
-    const setup=await http('/api/setup',{origin},{token:config.bootstrapToken,name:'MCP fixture',email:randomUUID()+'@mcp.test',password:randomBytes(32).toString('hex'),workspaceName:'MCP synthetic'});assert.equal(setup.status,200);
+    const setup=await http('/api/setup',{origin},{name:'MCP fixture',email:randomUUID()+'@mcp.test',password:randomBytes(32).toString('hex'),workspaceName:'MCP synthetic'});assert.equal(setup.status,200);
     const owner=(await pool.query("SELECT user_id,workspace_id FROM membership WHERE role='owner'")).rows[0],workspace=owner.workspace_id as string,ownerId=owner.user_id as string,project=randomUUID(),visitor='a'.repeat(64);
     await pool.query("INSERT INTO project(id,workspace_id,name,origin,public_key,retention_next_run_at) VALUES($1,$2,'MCP project','https://mcp.test',gen_random_uuid(),'infinity')",[project,workspace]);
     await pool.query('INSERT INTO analytics_visitor(project_id,id,first_seen_at,last_seen_at) VALUES($1,$2,clock_timestamp(),clock_timestamp())',[project,visitor]);

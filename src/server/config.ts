@@ -49,5 +49,5 @@ export function getConfig(env: NodeJS.ProcessEnv = process.env) {
   const databaseUrl = env.DATABASE_URL_FILE ? readFileSync(env.DATABASE_URL_FILE, 'utf8').trim() : env.DATABASE_URL;
   if (env.DATABASE_URL_FILE && env.DATABASE_URL) throw new Error('Set only DATABASE_URL or DATABASE_URL_FILE');
   if (!databaseUrl || !['postgres:', 'postgresql:'].includes(new URL(databaseUrl).protocol)) throw new Error('A PostgreSQL DATABASE_URL is required');
-  return { appUrl: url.origin, databaseUrl, authSecret: secret('AUTH_SECRET', env), bootstrapToken: secret('BOOTSTRAP_TOKEN', env), artifactDir: resolve(env.ARTIFACT_DIR ?? './data/artifacts'), collectPathAlias: aliases.collectPath, trackerScriptAlias: aliases.scriptPath };
+  return { appUrl: url.origin, databaseUrl, authSecret: secret('AUTH_SECRET', env), artifactDir: resolve(env.ARTIFACT_DIR ?? './data/artifacts'), collectPathAlias: aliases.collectPath, trackerScriptAlias: aliases.scriptPath };
 }

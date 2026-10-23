@@ -203,7 +203,7 @@ try{
   await writeFile(resolve(evidenceDir,'acceptance.json'),JSON.stringify({status:'passed',completedAt:new Date().toISOString(),cases:['real CRUD and exact chained visitor metrics','typed property edit','goal denominator and deduplication','accepted 503 and malformed 2xx immutable retry','failed edit-read and real revision conflict','real viewer demotion and stale workspace response','responsive tables and focus restoration','idempotent delete preserves events']},null,2)+'\n');
   console.log('PASS definition deletion, unchanged collected events, no browser exceptions or external browser requests');
 }catch(error){
-  const secrets=[fixture.owner.password,process.env.DATABASE_URL,process.env.AUTH_SECRET,process.env.BOOTSTRAP_TOKEN].filter(Boolean);
+  const secrets=[fixture.owner.password,process.env.DATABASE_URL,process.env.AUTH_SECRET].filter(Boolean);
   const redact=value=>secrets.reduce((text,secret)=>text.replaceAll(secret,'[redacted]'),String(value));
   await mkdir(evidenceDir,{recursive:true});await writeFile(resolve(evidenceDir,'failure.txt'),redact(stage+'\n'+(error.stack??error))+'\n',{mode:0o600});
   await page.screenshot({path:resolve(evidenceDir,'failure.png'),fullPage:true}).catch(()=>{});

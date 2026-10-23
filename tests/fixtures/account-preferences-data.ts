@@ -23,7 +23,7 @@ export function buildAccountPreferencesCapture(){
  };
  const dto=(user:User,revision:number,p:{timeZone:string;locale:AccountPreferencesDto['preferences']['locale'];theme:AccountPreferencesDto['preferences']['theme']}):AccountPreferencesDto=>
   accountPreferencesDtoSchema.parse({version:'account-preferences-v1',user,preferences:{revision,...p,updatedAt:revision===0?null:new Date(Date.parse(stamp)+revision*60_000).toISOString()}});
- const status=add('/api/status','GET',200,{configured:true,appUrl:'http://127.0.0.1'},null);
+ const status=add('/api/session','GET',200,{setupRequired:false,appUrl:'http://127.0.0.1',user:null},null);
  const oidcProviders=add('/api/auth/oidc/providers','GET',200,{providers:[]},null);
  const workspaceId=id(100),workspaceName='Synthetic workspace',renamed='Synthetic workspace renamed';
  const actor=(role:Role,n:number,withWorkspace=true)=>{

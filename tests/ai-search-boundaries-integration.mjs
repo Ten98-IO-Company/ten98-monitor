@@ -92,7 +92,7 @@ try{
  const removed=await scope('settlement after removal'),mq=await prepare(removed,'editor'),mr=await start(removed,mq),mh=hold(aiSearchEndpoints.live),mp=observed(executeAiSearch(mr.run.id,send));await entered(mh);await removeMember(removed.workspace,actors.owner.id,actors.editor.id);release(mh);assert.equal((await mp).ok,true);assert.equal((await row(mr.run.id)).actual_micros,'4000');assert.equal((await row(mr.run.id)).charge_status,'settled');await assert.rejects(getAiSearchRun(removed.pid,actors.editor.id,mr.run.id),{status:404});proof.dtos.overrun=await getAiSearchRun(over.pid,actors.owner.id,orr.run.id);group('Known overrun is recorded without pausing (D3) and incurred charge settles after actor removal without access revival');
  proof.phase='passed';
 }catch(error){
- const protectedValues=[passwords,...cookies,config.databaseUrl,config.authSecret,config.bootstrapToken,process.env.CREDENTIAL_KEYS];
+ const protectedValues=[passwords,...cookies,config.databaseUrl,config.authSecret,process.env.CREDENTIAL_KEYS];
  try{protectedValues.push(...Object.values(JSON.parse(process.env.CREDENTIAL_KEYS??'{}')));}catch{/* Invalid configuration is not echoed. */}
  const sanitize=value=>{let text=String(value??'');for(const secret of protectedValues)if(typeof secret==='string'&&secret)text=text.replaceAll(secret,'[redacted]');return text.replace(/(?:postgres(?:ql)?|https?):\/\/[^\s"'<>]+/gi,'[url]').slice(0,4096);};
  proof.phase='failed';proof.failure={type:sanitize(error?.constructor?.name??'Error'),message:sanitize(error?.message??error),stack:sanitize(error?.stack)};process.exitCode=1;

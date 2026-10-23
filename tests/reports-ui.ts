@@ -20,7 +20,7 @@ try {
   const {pool}=getDatabase();
   const email=`${randomUUID()}@reports-ui.integration.test`,password=randomBytes(24).toString('base64url');
   if(!(await pool.query("SELECT claimed FROM installation WHERE id='instance'")).rows[0].claimed) {
-    await claimInstallation({token:config.bootstrapToken,name:'Report UI owner',email,password,workspaceName:'Report UI checks'});
+    await claimInstallation({name:'Report UI owner',email,password,workspaceName:'Report UI checks'});
   } else {
     const userId=randomUUID();
     await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)',[userId,'Report UI owner',email]);

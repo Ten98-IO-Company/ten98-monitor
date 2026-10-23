@@ -122,7 +122,7 @@ async function limitWindow(key: string, maximum: number, minutes: number) {
        WHERE earlier.key=$1 AND earlier.minute < current.minute AND earlier.minute > current.minute - $3::integer),0) AS total FROM current`,
     [key, maximum, minutes],
   );
-  if (Number(rows[0].total) > maximum) throw new FoundationError(429, 'Too many requests. Wait a minute and try again.');
+  if (Number(rows[0].total) > maximum) throw new FoundationError(429, `Too many attempts. Wait ${minutes === 1 ? 'a minute' : `${minutes} minutes`} and try again.`);
 }
 
 /**
@@ -270,9 +270,14 @@ export async function handleApi(request: Request): Promise<Response> {
       await access(config.artifactDir, constants.W_OK);
       return json({ status: 'ready' });
     }
-    if (path === '/api/status' && request.method === 'GET') {
+    // GET /api/session is canonical; /api/status (`configured`) is the retained alias. Neither reveals a user when signed out.
+    if ((path === '/api/session' || path === '/api/status') && request.method === 'GET') {
       const { rows } = await getDatabase().pool.query("SELECT claimed FROM installation WHERE id='instance'");
-      return json({ configured: rows[0]?.claimed === true, appUrl: config.appUrl, trackerScript: config.trackerScriptAlias ?? '/tracker.js', collectPath: config.collectPathAlias });
+      const configured = rows[0]?.claimed === true;
+      const installation = { appUrl: config.appUrl, trackerScript: config.trackerScriptAlias ?? '/tracker.js', collectPath: config.collectPathAlias };
+      if (path === '/api/status') return json({ configured, ...installation });
+      const session = configured ? await getAuth().api.getSession({ headers: request.headers }) : null;
+      return json({ setupRequired: !configured, ...installation, user: session ? { id: session.user.id, name: session.user.name, email: session.user.email } : null });
     }
     if (path === '/api/collect' || path === '/api/tracking-config' || path === '/api/replay/begin' || path === '/api/replay/chunks'||path==='/api/heatmaps/begin'||path==='/api/heatmaps/batches'||path==='/api/heatmaps/backgrounds') {
       const origin = request.headers.get('origin');
@@ -361,7 +366,9 @@ export async function handleApi(request: Request): Promise<Response> {
         return json({ ...accepted, signedIn: false });
       }
     }
-    if (path === '/api/setup' && request.method === 'POST') {
+    // While unclaimed, the first sign-up becomes instance operator and workspace owner. POST /api/auth/setup is canonical and must
+    // stay ahead of the /api/auth/ catch-all below; /api/setup is the retained alias. Both share one per-client bucket.
+    if ((path === '/api/auth/setup' || path === '/api/setup') && request.method === 'POST') {
       await limitWindow(clientRateKey(request, 'setup'), 10, 15);
       const body = await readJson(request) as Parameters<typeof claimInstallation>[0];
       await claimInstallation(body);

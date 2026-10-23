@@ -7,8 +7,8 @@ import {executionBody,executionInput,parseOpenRouterJson} from '../src/server/op
 import {executionRequestBody,parseRoute,parseExecutionOutcome,readOpenRouterRoutes} from '../src/server/openrouter.ts';
 import {suggestionModel,suggestionQuoteInput} from '../src/server/ai-suggestion-input.ts';
 import {insightFilters} from '../src/server/prompt-insights.ts';
-process.env.AUTH_SECRET='synthetic-models-unit-auth-'.repeat(4);process.env.BOOTSTRAP_TOKEN='synthetic-models-unit-claim-'.repeat(4);process.env.DATABASE_URL='postgresql://synthetic:synthetic@localhost/unused_models_unit';
-delete process.env.AUTH_SECRET_FILE;delete process.env.BOOTSTRAP_TOKEN_FILE;delete process.env.DATABASE_URL_FILE;
+process.env.AUTH_SECRET='synthetic-models-unit-auth-'.repeat(4);process.env.DATABASE_URL='postgresql://synthetic:synthetic@localhost/unused_models_unit';
+delete process.env.AUTH_SECRET_FILE;delete process.env.DATABASE_URL_FILE;
 const model='vendor/text-standard',id=randomUUID(),actor='a'.repeat(64);
 function catalogRow(value=model){return {id:value,canonical_slug:value,name:'Text standard',context_length:128000,top_provider:{max_completion_tokens:4096},architecture:{input_modalities:['text'],output_modalities:['text']},supported_parameters:['max_tokens','response_format','structured_outputs'],pricing:{prompt:'1e-7',completion:'4e-7',request:'0.0000001'}};}
 function endpoint(tag='compute/region',provider='Compute One'){return {tag,provider_name:provider,model_id:model,status:0,context_length:128000,max_prompt_tokens:null,max_completion_tokens:4096,supported_parameters:['max_tokens','response_format','structured_outputs'],pricing:{prompt:'1e-7',completion:'4e-7',request:'0.0000001',input_cache_read:'5e-8',discount:0}};}

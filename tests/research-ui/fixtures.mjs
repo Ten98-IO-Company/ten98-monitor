@@ -73,7 +73,7 @@ export async function seedFixture(){
   globalThis.fetch=send;
   const credentials=()=>({email:randomUUID()+'@research-ui.integration.test',password:randomBytes(24).toString('base64url')});
   const bootstrap=credentials();
-  await claimInstallation({token:process.env.BOOTSTRAP_TOKEN,name:'Synthetic fixture operator',workspaceName:'Fixture administration',...bootstrap});
+  await claimInstallation({name:'Synthetic fixture operator',workspaceName:'Fixture administration',...bootstrap});
   bootstrap.id=(await pool.query('SELECT id FROM "user" WHERE email=$1',[bootstrap.email])).rows[0].id;
   async function user(name){
     const data={id:randomUUID(),name,...credentials()},hash=await hashPassword(data.password),client=await pool.connect();

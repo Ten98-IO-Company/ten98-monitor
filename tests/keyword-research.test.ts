@@ -6,9 +6,8 @@ import {parseKeywordAccount,parseKeywordMarkets,parseKeywordOutcome,parseKeyword
 import {dataforseoRefusal,dataforseoRefusalMessage,dataforseoWalletCodes} from '../src/server/dataforseo-transport.ts';
 
 process.env.AUTH_SECRET='keyword-test-only-auth-secret-'.repeat(2);
-process.env.BOOTSTRAP_TOKEN='keyword-test-only-bootstrap-'.repeat(2);
 process.env.DATABASE_URL='postgresql://synthetic:synthetic@localhost/unused_keyword_unit';
-delete process.env.AUTH_SECRET_FILE;delete process.env.BOOTSTRAP_TOKEN_FILE;delete process.env.DATABASE_URL_FILE;
+delete process.env.AUTH_SECRET_FILE;delete process.env.DATABASE_URL_FILE;
 const request=parseKeywordRequest({connectionId:randomUUID(),mode:'overview',keywords:['Example',' Missing '],locationCode:2840,languageCode:'en',limit:100});
 const id=randomUUID();
 const free=(result:unknown[])=>({httpStatus:200,body:{status_code:20000,cost:0,tasks_count:1,tasks:[{status_code:20000,cost:0,result}]}});

@@ -6,7 +6,7 @@ Use Node 24, installed application dependencies, an installed Chromium browser a
 
 Provide an explicit ignored environment file, for example `.env.funnels-browser`, containing:
 
-- Ordinary application configuration with fresh synthetic secrets, including `AUTH_SECRET` and `BOOTSTRAP_TOKEN`; never copy production credentials.
+- Ordinary application configuration with fresh synthetic secrets, including `AUTH_SECRET`; never copy production credentials.
 - `TEN98_INTEGRATION_TEST=1` and `TEN98_CONVERSIONS_BROWSER=1`.
 - A loopback `DATABASE_URL` whose database is `ten98_funnels_` followed by lowercase letters, digits or underscores. Query parameters, fragments and `DATABASE_URL_FILE` are rejected, including PostgreSQL options that could override the hostname.
 - Identical loopback `APP_URL` and `BASE_URL` origins, such as `http://localhost:3051`, with matching `HOST=127.0.0.1` and `PORT=3051`. Check the port is unused.

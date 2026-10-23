@@ -1,4 +1,4 @@
-// TEN98_PROJECT_DELETE_COMPILED=1 BASE_URL=http://127.0.0.1:3111 BOOTSTRAP_TOKEN=<that server's token> OUT_DIR=<new private dir> PLAYWRIGHT_MODULE=<owned playwright> node tests/project-delete-compiled-browser.mjs
+// TEN98_PROJECT_DELETE_COMPILED=1 BASE_URL=http://127.0.0.1:3111 OUT_DIR=<new private dir> PLAYWRIGHT_MODULE=<owned playwright> node tests/project-delete-compiled-browser.mjs
 // Drives the real built server (node .output/server/index.mjs) on a FRESH, UNCLAIMED, migrated local database with headless Edge.
 // Claims the owner, creates two synthetic websites, deletes one from Collection and privacy, then checks router, selector, reload, 404 and stale deep link.
 // Then creates a public website link on the surviving website and opens it in a fresh context (sections, fragment scrub, capability-only reads, 44 px, revoke, reload).
@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';assert.equal(process.env.TEN98_PROJECT_D
 import {writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {launchChromium} from './helpers/playwright.mjs';
-const base=process.env.BASE_URL,out=process.env.OUT_DIR,token=process.env.BOOTSTRAP_TOKEN;
+const base=process.env.BASE_URL,out=process.env.OUT_DIR;
 const browser=await launchChromium();const evidence={steps:[],errors:[],api:[],csp:null};
 const context=await browser.newContext({viewport:{width:1440,height:1000}});
 // Every frame reports Content-Security-Policy violations as console errors, so a blocked script, style, image or frame fails the harness.
@@ -20,7 +20,7 @@ try{
  evidence.csp=landing.headers()['content-security-policy']??null;const headerNonce=evidence.csp?.match(/'nonce-([^']+)'/)?.[1];assert.ok(headerNonce,'The compiled document must carry a nonce policy.');
  assert.equal(await page.evaluate(()=>document.querySelector('script[type="module"]').nonce),headerNonce,'The module entry script must carry the header nonce.');step('document policy nonce matches the module entry script');
  await page.getByRole('heading',{name:'Create owner account'}).waitFor();
- await page.getByLabel('Setup token',{exact:true}).fill(token);await page.getByLabel('Your name',{exact:true}).fill('Compiled owner');await page.getByLabel('Email address',{exact:true}).fill('owner@compiled-delete.test');await page.getByLabel('Password',{exact:true}).fill('synthetic-password-12345');await page.getByLabel('Workspace name',{exact:true}).fill('Compiled workspace');
+ await page.getByLabel('Setup token',{exact:true}).fill('not-used');await page.getByLabel('Your name',{exact:true}).fill('Compiled owner');await page.getByLabel('Email address',{exact:true}).fill('owner@compiled-delete.test');await page.getByLabel('Password',{exact:true}).fill('synthetic-password-12345');await page.getByLabel('Workspace name',{exact:true}).fill('Compiled workspace');
  await page.getByRole('button',{name:'Create owner account'}).click();
  await projectSelect().waitFor({state:'attached'});step('owner claimed and signed in');
  // Mirrors the ReplayPreview player document in src/components/SessionReplayPanel.tsx: a data: frame inherits the page policy, mints its own

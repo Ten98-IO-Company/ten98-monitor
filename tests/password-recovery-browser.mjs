@@ -43,7 +43,7 @@ async function fresh(fragment = '', responder = async () => false, options = {})
     const call = { context: evidence.contexts, path: url.pathname, method: request.method(), searchKeys: [...url.searchParams.keys()], bodyKeys: body && typeof body === 'object' ? Object.keys(body).sort() : null, bodySha256: bodyText === null ? null : createHash('sha256').update(bodyText).digest('hex') };
     evidence.requests.push(call); save(); assert.equal(url.hash, ''); assert.equal(url.search, '', 'Recovery capabilities never become API query parameters.');
     if (await override(route, { ...call, body }, request)) return;
-    if (call.method === 'GET' && call.path === '/api/status') return reply(route, { configured: true, appUrl: origin });
+    if (call.method === 'GET' && call.path === '/api/session') return reply(route, { setupRequired: false, appUrl: origin, user: null });
     if (call.method === 'GET' && call.path === '/api/me') return reply(route, { error: 'Synthetic signed-out session.' }, 401);
     if (call.method === 'GET' && call.path === '/api/auth/oidc/providers') return reply(route, { providers: [] });
     if (call.method === 'GET' && call.path === '/api/auth/password-reset-status') return reply(route, { configured: state.configured });

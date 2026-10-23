@@ -1,5 +1,5 @@
 // Opt-in production-shell check. Needs a fresh local app (BASE_URL, default http://localhost:3094, plus that
-// server's BOOTSTRAP_TOKEN); tests/fixtures/navigation-review.mjs provisions a synthetic viewer session at run
+// unclaimed); tests/fixtures/navigation-review.mjs provisions a synthetic viewer session at run
 // time. TEN98_SHELL_FIXTURE may name a private session JSON instead. Fixture event/job writes never reach the
 // server. No direct DB/provider access.
 import assert from 'node:assert/strict';
@@ -78,11 +78,11 @@ try {
     }
     // These reads retain the real synthetic account/project IDs. Identity, list
     // length, membership and authority overlays are presentation cases, not RBAC proof.
-    if (method === 'GET' && ['/api/status', '/api/me', `/api/workspaces/${workspace}/projects`].includes(path)) {
+    if (method === 'GET' && ['/api/session', '/api/me', `/api/workspaces/${workspace}/projects`].includes(path)) {
       const response = await route.fetch({maxRedirects:0});
       assert.equal(response.status(), 200, 'Synthetic navigation authentication must still be valid.');
       const body = await response.json();
-      if (path === '/api/status') { assert.equal(body.configured, true); body.appUrl = origin; }
+      if (path === '/api/session') { assert.equal(body.setupRequired, false); body.appUrl = origin; }
       if (path === '/api/me') {
         const selected = body.workspaces.find(item => item.id === workspace);
         assert.ok(selected, 'Synthetic account retains selected workspace access.');

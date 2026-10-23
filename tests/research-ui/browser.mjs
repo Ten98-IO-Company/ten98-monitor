@@ -33,7 +33,7 @@ export async function projectSection(page,project,section){
   await target.click();
 }
 export async function captureFailure(page,error,stage){
-  const secrets=[process.env.AUTH_SECRET,process.env.BOOTSTRAP_TOKEN,process.env.DATABASE_URL,process.env.CREDENTIAL_KEYS];
+  const secrets=[process.env.AUTH_SECRET,process.env.DATABASE_URL,process.env.CREDENTIAL_KEYS];
   try{const fixture=JSON.parse(await readFile(resolve(evidenceDir,'fixtures.json'),'utf8'));secrets.push(fixture.bootstrap.password,...Object.values(fixture.groups).flatMap(group=>[group.owner?.password,group.editor?.password,group.viewer?.password]));}catch{}
   const redact=value=>secrets.filter(value=>typeof value==='string'&&value.length>5).reduce((text,secret)=>text.replaceAll(secret,'[redacted]'),String(value));
   const dir=resolve(evidenceDir,'research-evidence');await mkdir(dir,{recursive:true});

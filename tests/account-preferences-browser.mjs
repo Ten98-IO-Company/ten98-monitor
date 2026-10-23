@@ -31,7 +31,7 @@ async function fresh(actor,initial,respond){
  await context.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin){evidence.external.push(url.origin);return route.abort();}if(!url.pathname.startsWith('/api/'))return route.continue();const call={path:url.pathname,method:request.method(),body:request.postData()};evidence.requests.push(call);save();
   try{
    if(await handler(route,call))return;
-   if(call.path==='/api/status'&&call.method==='GET')return successful(route,wire(captured.status,call.path));
+   if(call.path==='/api/session'&&call.method==='GET')return successful(route,wire(captured.status,call.path));
    if(call.path==='/api/auth/oidc/providers'&&call.method==='GET')return successful(route,wire(captured.oidcProviders,call.path));
    if(call.path==='/api/me'&&call.method==='GET')return successful(route,wire(actor.me,call.path));
    const project=Object.entries(actor.projects??{}).find(([id])=>call.path==='/api/workspaces/'+id+'/projects');if(project&&call.method==='GET')return successful(route,wire(project[1],call.path));

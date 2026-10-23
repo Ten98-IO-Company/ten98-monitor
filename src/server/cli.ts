@@ -24,7 +24,6 @@ async function setup() {
     `POSTGRES_PASSWORD=${password}`,
     `DATABASE_URL=postgres://ten98:${password}@postgres:5432/ten98`,
     `AUTH_SECRET=${randomBytes(32).toString('hex')}`,
-    `BOOTSTRAP_TOKEN=${randomBytes(32).toString('hex')}`,
     `CREDENTIAL_KEYS=${JSON.stringify({ v1: randomBytes(32).toString('base64') })}`,
     'CREDENTIAL_ACTIVE_KEY=v1',
     'ARTIFACT_DIR=./data/artifacts', '',
@@ -35,7 +34,7 @@ async function setup() {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new CliError('Setup stopped: .env already exists and was not changed.');
     throw new CliError('Setup could not create .env. Check directory permissions.');
   }
-  console.log('Created .env with fresh credentials. Read it privately for the owner bootstrap token. No database was changed.');
+  console.log('Created .env with fresh credentials. No database was changed. Open the app and create the first account; it becomes the owner.');
 }
 
 async function migrate() {
