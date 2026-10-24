@@ -14,6 +14,7 @@ import {getConfig} from '../src/server/config.ts';
 import {assertSchema,getDatabase,closeDatabase} from '../src/server/db.ts';
 import {normalizeProperties} from '../src/server/analytics-input.ts';
 import {launchChromium} from './helpers/playwright.mjs';
+import {openView} from './helpers/app-navigation.ts';
 
 assert.equal(process.env.TEN98_INTEGRATION_TEST,'1');assert.equal(process.env.TEN98_SEGMENTS_BROWSER,'1');
 const config=getConfig(),db=new URL(config.databaseUrl),app=new URL(config.appUrl);
@@ -48,7 +49,7 @@ try{
   async function csv(){const event=page.waitForEvent('download');await (await closeExplore(page)).getByRole('button',{name:'Download CSV',exact:true}).click();const download=await event;return readFile(await download.path(),'utf8');}
   async function post(path,body){const response=await context.request.post(config.appUrl+endpoint+path,{headers:{origin:config.appUrl},data:body});assert.equal(response.status(),200);return response.json();}
   async function mutation(label,confirmTitle){await editExplore(page);const response=page.waitForResponse(r=>new URL(r.url()).pathname.startsWith(endpoint)&&r.request().method()==='POST');await button(label).click();if(confirmTitle)await page.getByRole('dialog',{name:confirmTitle,exact:true}).getByRole('button',{name:label,exact:true}).click();const result=await response;assert.equal(result.status(),200);return result.json();}
-  await nav('Saved filter sample');await nav('Traffic explorer');await (await closeExplore(page)).getByRole('button',{name:'Download CSV',exact:true}).waitFor();await editExplore(page);await saved.getByText('No saved filters yet.',{exact:true}).waitFor();
+  await nav('Saved filter sample');await closeExplore(page);await openView(page,'explore');await (await closeExplore(page)).getByRole('button',{name:'Download CSV',exact:true}).waitFor();await editExplore(page);await saved.getByText('No saved filters yet.',{exact:true}).waitFor();
   await (await editExplore(page)).getByLabel('From',{exact:true}).fill(day);await (await editExplore(page)).getByLabel('To',{exact:true}).fill(day);await (await editExplore(page)).getByLabel('Time zone',{exact:true}).fill('Asia/Dubai');await (await editExplore(page)).getByLabel('Group by',{exact:true}).selectOption('path');await apply();
   assert.equal(await page.locator('.metric-value').first().innerText(),'3');const beforeCsv=await csv();
   await open('More filters');await (await editExplore(page)).getByLabel('Show',{exact:true}).selectOption('custom');await (await editExplore(page)).getByLabel('Enable Path',{exact:true}).check();await (await editExplore(page)).getByLabel('Path equals',{exact:true}).fill(literal);

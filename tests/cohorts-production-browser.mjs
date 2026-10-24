@@ -15,6 +15,7 @@ import {getConfig} from '../src/server/config.ts';
 import {assertSchema,getDatabase,closeDatabase} from '../src/server/db.ts';
 import {analyticsIdentity} from '../src/server/native-analytics.ts';
 import {launchChromium} from './helpers/playwright.mjs';
+import {openView} from './helpers/app-navigation.ts';
 
 assert.equal(process.env.TEN98_INTEGRATION_TEST,'1');assert.equal(process.env.TEN98_COHORTS_PRODUCTION_BROWSER,'1');
 const config=getConfig(),db=new URL(config.databaseUrl),origin=config.appUrl;
@@ -63,7 +64,7 @@ try{
   const definition=(path,day='2026-03-01')=>({schemaVersion:1,name:path+' qualification',query:new URLSearchParams({from:day,to:day,timeZone:'America/New_York',path}).toString()});
   async function reportDraft(){await (await editExplore(page)).getByLabel('From',{exact:true}).fill('2026-03-08');await (await editExplore(page)).getByLabel('To',{exact:true}).fill('2026-03-08');await (await editExplore(page)).getByLabel('Time zone',{exact:true}).fill('Asia/Dubai');await (await editExplore(page)).getByLabel('Group by',{exact:true}).selectOption('path');await open('More filters');await (await editExplore(page)).getByLabel('Enable Path',{exact:true}).check();await (await editExplore(page)).getByLabel('Path equals',{exact:true}).fill('/report');}
 
-  stage='create and explicit apply';await nav('Cohort sample');await nav('Traffic explorer');await (await closeExplore(page)).getByRole('button',{name:'Download CSV',exact:true}).waitFor();await settled();
+  stage='create and explicit apply';await nav('Cohort sample');await closeExplore(page);await openView(page,'explore');await (await closeExplore(page)).getByRole('button',{name:'Download CSV',exact:true}).waitFor();await settled();
   await reportDraft();
   const broad=await report();assert.equal(broad.totals.events,4);const broadCsv=await csv();let reads=requests.length;
   const inert='<b>March qualifiers 🐎</b>';await add(inert);let main=(await save()).item;assert.equal(main.revision,1);assert.equal(await (await editExplore(page)).getByRole('region',{name:'Cohorts',exact:true}).locator('b').count(),0);assert.equal(requests.length,reads);assert.equal(await csv(),broadCsv);
