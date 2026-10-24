@@ -22,7 +22,7 @@ export async function runDomainResearchChecks(browserCheck?:(fixture:DomainBrows
  if(process.env.GITHUB_ACTIONS==='true'){assert.equal(process.env.TEN98_ISOLATED_CI_DATABASE,'1');assert.equal(database.port,'5432');assert.equal(database.pathname,'/ten98_domain_research_ci');}
  else{assert.equal(database.port,'55501');assert.match(database.pathname,/^\/ten98_domain_research_[a-f0-9]{12}$/);}
  assert.equal(database.search,'');assert.equal(database.hash,'');
- await assertSchema();assert.equal((await migrationSources()).at(-1)?.filename,'0073_operator_export_audit.sql');
+ await assertSchema();assert.equal((await migrationSources()).at(-1)?.filename,'0074_api_key_prefix_last_used.sql');
  const pool=getDatabase().pool,password=randomBytes(24).toString('base64url'),actors:Actor[]=[];
  for(const role of ['owner','admin','editor','viewer','foreign']){const id=randomUUID(),email=id+'@domain.integration.test';await pool.query('INSERT INTO "user"(id,name,email)VALUES($1,$2,$3)',[id,'Domain '+role,email]);await pool.query('INSERT INTO account(id,"accountId","providerId","userId",password)VALUES($1,$2,\'credential\',$2,$3)',[randomUUID(),id,await hashPassword(password)]);actors.push({id,email,cookie:'',role});}
  const [owner,admin,editor,viewer,foreign]=actors,originalFetch=globalThis.fetch;

@@ -5,6 +5,7 @@ import {GeographyAttribution} from './GeographyAttribution';
 import {api,ApiError,errMsg} from '../lib/api';
 import {canonicalNavigation,sessionNavigation,type NavigationSearch,type SessionNavigation} from '../lib/navigation';
 import {readSessionResponse,readLinkedActivityResponse,sessionParams} from '../lib/session-explorer';
+import {formatRelativeInstant} from '../lib/report-time';
 import type {SessionList,SessionDetail,SessionReadMeta,SessionRow,LinkedActivity} from '../server/session-explorer-input';
 import {initialDraft,patchLocationFilters,ExactFilterControls,AdvancedControls,AdvancedSummary,SessionStatus,focusAdvanced,draftFilterQuery,sameDefinition,readAdvanced,savedPredicates,validSaved,validCohort,record,clean,num,KINDS,TIMEZONES,type Draft,type SavedFilter,type CohortRef} from './ExplorerFilters';
 import {workspaceRoles,type WorkspaceRole} from '@ten98/runtime';
@@ -172,12 +173,11 @@ function Summary({label,items}:{label:string;items:readonly (readonly [string,st
 const compact=(value:string,zone:string)=>new Intl.DateTimeFormat(undefined,{timeZone:zone,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}).format(new Date(value));
 // @ten98/ui 0.23.0 does not export formatDuration from its entry point, so spans use this compact "1h 3m 20s" form.
 const duration=(value:string)=>{const total=Math.round(Number(value)),h=Math.floor(total/3600),m=Math.floor(total%3600/60),s=total%60;return [h&&`${h}h`,(h||m)&&`${m}m`,`${s}s`].filter(Boolean).join(' ');};
-const relative=(value:string)=>{const seconds=(new Date(value).getTime()-Date.now())/1000,rtf=new Intl.RelativeTimeFormat(undefined,{numeric:'auto'});for(const [unit,size] of [['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60]] as const)if(Math.abs(seconds)>=size)return rtf.format(Math.round(seconds/size),unit);return rtf.format(Math.round(seconds),'second');};
 const clock=(value:string,zone:string)=>new Intl.DateTimeFormat(undefined,{timeZone:zone,timeStyle:'long'}).format(new Date(value));
 // The key is shortened in the middle so rows stay on one line; the full key stays in the row header text (assistive technology, find and selection) and in the link name.
 const sessionColumns=(zone:string,open:(row:SessionRow)=>ReactNode):DataColumn<SessionRow>[]=>[
   {key:'visitorKey',header:'Observed visitor key',rowHeader:true,render:row=><><Text as="span" size="sm" mono dir="ltr" title={row.visitorKey} aria-hidden="true">{short(row.visitorKey)}</Text><VisuallyHidden as="span"><Text as="strong" dir="ltr">{row.visitorKey}</Text></VisuallyHidden></>},
-  {key:'lastAt',header:'Last matching event',render:row=><Inline gap={2} align="baseline" wrap={false}><Text as="time" dateTime={row.lastAt}>{compact(row.lastAt,zone)}</Text><Text as="span" size="sm" tone="muted">{relative(row.lastAt)}</Text></Inline>},
+  {key:'lastAt',header:'Last matching event',render:row=><Inline gap={2} align="baseline" wrap={false}><Text as="time" dateTime={row.lastAt}>{compact(row.lastAt,zone)}</Text><Text as="span" size="sm" tone="muted">{formatRelativeInstant(row.lastAt)}</Text></Inline>},
   {key:'firstAt',header:'First matching event',render:row=><Text as="time" dateTime={row.firstAt}>{compact(row.firstAt,zone)}</Text>},
   {key:'visits',header:'Visits',numeric:true},{key:'pageViews',header:'Page views',numeric:true},{key:'customEvents',header:'Custom events',numeric:true},{key:'activity',header:'Activity',render:open}];
 function ActivityTimeline({events,zone,baseKey,continuingVisit,sourceLink}:{events:ActivityEvent[];zone:string;baseKey:string;continuingVisit:boolean;sourceLink?:(event:NonNullable<LinkedActivity['activity']>[number])=>ReactNode}){return <Stack as="ol" gap={5}>{events.map((event,index)=>{const environment=[event.dimensions.browser,event.dimensions.os,event.dimensions.device].filter(Boolean).join(' · ');return <Stack as="li" gap={2} key={event.id}>

@@ -93,7 +93,7 @@ try {
     WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f') LIMIT 1`);
   assert.equal(existing.rowCount, 0, 'Use a separate empty test database; existing schemas and data will not be modified.');
   const sources = await migrationSources();
-  assert.deepEqual(sources.map(({ version }) => version), ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0019', '0020', '0021', '0022', '0023', '0024', '0025', '0026', '0027', '0028', '0029', '0030', '0031', '0032', '0033', '0034', '0035', '0036', '0037', '0038', '0039', '0040', '0041', '0042', '0043', '0044', '0045', '0046', '0047', '0048', '0049', '0050', '0051', '0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059', '0060', '0061', '0062', '0063', '0064', '0065', '0066', '0067', '0068', '0069', '0070', '0071', '0072', '0073']);
+  assert.deepEqual(sources.map(({ version }) => version), ['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0019', '0020', '0021', '0022', '0023', '0024', '0025', '0026', '0027', '0028', '0029', '0030', '0031', '0032', '0033', '0034', '0035', '0036', '0037', '0038', '0039', '0040', '0041', '0042', '0043', '0044', '0045', '0046', '0047', '0048', '0049', '0050', '0051', '0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059', '0060', '0061', '0062', '0063', '0064', '0065', '0066', '0067', '0068', '0069', '0070', '0071', '0072', '0073', '0074']);
   assert.equal(sources.find(m=>m.version==='0029')!.checksum,'8c7559f0e64f899bae4dc36aa9afa521b69624dba7849f28dfc3c1cb730097de','Append0030 without rewriting the published0029 migration.');
   assert.equal(sources.find(m=>m.version==='0030')!.checksum,'87b06aefbfe1b2228bda7fe91a28563265e908b92f07574ad3cb7e5380bbb28e','Append0031 without rewriting the published0030 migration.');
   assert.equal(sources.find(m=>m.version==='0031')!.checksum,'0a5d1fc0ee88c4aad84dbb41b32eb2d80bf0b5d816a907dfabb5a0228925ee65','Append0032 without rewriting published0031.');
@@ -116,7 +116,8 @@ try {
   assert.equal(sources.find(source=>source.filename==='0070_account_closure.sql')!.checksum,'dc007eb9beb585e0b90f4811bebd085f08efc52abf5da4878e9da40512a0114f','Preserve the exact registered migration 0070_account_closure.sql.');
   assert.equal(sources.find(source=>source.filename==='0071_email_suppression.sql')!.checksum,'fa9376e190b8b21813aa9558f996cbfb05d3bf2e7449665a7c0efd2ad746248b','Preserve the exact registered migration 0071_email_suppression.sql.');
   assert.equal(sources.find(source=>source.filename==='0072_paid_work_archive.sql')!.checksum,'3dde3cbd3ecdeebf6a751bdfdb1ddccf1d0625c5f71e1fad488b651b303e1cf9','Preserve the exact registered migration 0072_paid_work_archive.sql.');
-  assert.equal(sources.at(-1)?.filename,'0073_operator_export_audit.sql','Register0073 after the published0072 migration.');
+  assert.equal(sources.find(source=>source.filename==='0073_operator_export_audit.sql')!.checksum,'eaedea9006be24ce5a1e9b96a05ac35c7e848b35511202bfddb05817e96dc120','Preserve the exact registered migration 0073_operator_export_audit.sql.');
+  assert.equal(sources.at(-1)?.filename,'0074_api_key_prefix_last_used.sql','Register0074 after the published0073 migration.');
   const foundation = await migrationSource();
 
   stage = 'seed original foundation schema and data';
@@ -1012,7 +1013,7 @@ try {
   console.log('PASS native registered SQL68-to69 creates exactly the empty project_share table (project cascade, creator SET NULL, unique token hash, declared sections and lifetime checks, millisecond stamps, page index) with no backfill or receipt, preserving every populated68 row, column, index, constraint, table and checksum');
   // 0070 adds account closure (https://github.com/Ten98-IO-Company/ten98-discover/wiki/Accounts-and-Data#account-closure): the nullable closed_at tombstone marker with its consistency check, the
   // empty closure audit table and the closed-account triggers. No backfill: every existing account stays open.
-  // The current CLI applies0071 to0073 too; apply ONLY0070 natively so its row/schema oracles stay unchanged. The CLI72-to73
+  // The current CLI applies0071 to0074 too; apply ONLY0070 natively so its row/schema oracles stay unchanged. The CLI73-to74
   // upgrade below is this suite's actual CLI stage.
   stage='native registered SQL upgrade populated0069 to0070';
   const auditTable70='account_closure_audit',history69=await history(),data69Kept=await rows61(),schema69Kept=await schemaSnapshot(),tables70=[...tables69,auditTable70].sort();
@@ -1044,7 +1045,7 @@ try {
   assert.equal((await pool.query("SELECT to_regnamespace('pgboss')::text AS schema")).rows[0].schema,bossSchema42,'0070 starts no queue.');
   console.log('PASS native registered SQL69-to70 adds the nullable closed_at marker with its tombstone check, the empty account_closure_audit table and the closed-account triggers with no backfill, preserving every populated69 row, column, index, constraint, table and checksum');
   // 0071 creates the empty transactional email suppression table (#304): digests only, no backfill.
-  // The current CLI applies0072 and0073 too; apply ONLY0071 natively so its row/schema oracles stay unchanged.
+  // The current CLI applies0072 to0074 too; apply ONLY0071 natively so its row/schema oracles stay unchanged.
   stage='native registered SQL upgrade populated0070 to0071';
   const suppressionTable71='email_suppression',history70=await history(),data70Kept=await rows61(),schema70Kept=await schemaSnapshot(),tables71=[...tables70,suppressionTable71].sort();
   assert.deepEqual(schema70Kept,schema70,'Schema70 is unchanged by its rolled-back probes before0071.');
@@ -1065,7 +1066,7 @@ try {
   assert.equal((await pool.query("SELECT to_regnamespace('pgboss')::text AS schema")).rows[0].schema,bossSchema42,'0071 starts no queue.');
   console.log('PASS native registered SQL70-to71 creates exactly the empty email_suppression table (digest primary key, declared reasons) with no backfill, preserving every populated70 row, column, index, constraint, table and checksum');
   // 0072 creates the empty paid-work archive (#292, #291): rows are copied only by a later website or workspace deletion.
-  // The current CLI applies0073 too; apply ONLY0072 natively so its row/schema oracles stay unchanged.
+  // The current CLI applies0073 and0074 too; apply ONLY0072 natively so its row/schema oracles stay unchanged.
   stage='native registered SQL upgrade populated0071 to0072';
   const archiveTable72='paid_work_archive',history71=await history(),data71Kept=await rows61(),schema71Kept=await schemaSnapshot(),tables72=[...tables71,archiveTable72].sort();
   assert.deepEqual(schema71Kept,schema71,'Schema71 is unchanged by its rolled-back probes before0072.');
@@ -1087,10 +1088,12 @@ try {
   console.log('PASS native registered SQL71-to72 creates exactly the empty paid_work_archive table (no foreign key, object records, non-null account ids, scope/age/account indexes) with no backfill, preserving every populated71 row, column, index, constraint, table and checksum');
   // 0073 lets the operator audit record a paid-work export (follow-up to #370): one nullable scope column and the widened
   // action check. No backfill; existing audit rows keep a null scope.
-  stage='actual current CLI upgrade populated0072 to0073';
+  // The current CLI applies0074 too; apply ONLY0073 natively so its row/schema oracles stay unchanged.
+  stage='native registered SQL upgrade populated0072 to0073';
   const operatorAudit73='instance_operator_audit',history72=await history(),data72Kept=await rows61(),schema72Kept=await schemaSnapshot(),audit72=(await pool.query('SELECT to_jsonb(a) AS row FROM instance_operator_audit a ORDER BY id')).rows;
   assert.deepEqual(schema72Kept,schema72,'Schema72 is unchanged by its rolled-back probes before0073.');
-  assert.match(runMigrate(0),/Database migrations applied: 0073\./);await assertSchema();
+  const audit73Source=sources.find(source=>source.version==='0073')!,audit73Client=await pool.connect();
+  try{await audit73Client.query('BEGIN');await audit73Client.query(audit73Source.sql);await audit73Client.query('INSERT INTO schema_version VALUES($1,$2)',[audit73Source.version,audit73Source.checksum]);await audit73Client.query('COMMIT');}finally{await audit73Client.query('ROLLBACK').catch(()=>{});audit73Client.release();}await assert.rejects(assertSchema(),{code:'SCHEMA_MISMATCH'});
   assert.deepEqual((await history()).slice(0,72),history72,'0073 preserves every published migration checksum.');
   assert.deepEqual(await rows61(),data72Kept,'0073 preserves EVERY populated72 row and field.');
   assert.deepEqual((await pool.query("SELECT to_jsonb(a)-'scope' AS row FROM instance_operator_audit a ORDER BY id")).rows,audit72,'0073 keeps every operator audit row.');
@@ -1107,7 +1110,29 @@ try {
   assert.equal(await probe73('paid_work_export','workspace:Acme Ltd'),0,'Schema73 refuses free text.');assert.equal(await probe73('export',`workspace:${id73}`),0,'Schema73 refuses an undeclared action.');assert.equal(await probe73('grant',null),1,'Schema73 still admits a role change.');
   assert.deepEqual((await pool.query("SELECT to_jsonb(a)-'scope' AS row FROM instance_operator_audit a ORDER BY id")).rows,audit72,'The probes roll back.');
   assert.equal((await pool.query("SELECT to_regnamespace('pgboss')::text AS schema")).rows[0].schema,bossSchema42,'0073 starts no queue.');
-  console.log('PASS actual CLI72-to73 adds only the nullable instance_operator_audit.scope column and the paid_work_export action (scope required exactly for exports, ids only) with no backfill, preserving every populated72 row, column, index, constraint, table and checksum');
+  console.log('PASS native registered SQL72-to73 adds only the nullable instance_operator_audit.scope column and the paid_work_export action (scope required exactly for exports, ids only) with no backfill, preserving every populated72 row, column, index, constraint, table and checksum');
+  // 0074 adds the API key display prefix and last-use time (#353): two nullable columns, no backfill. A key issued before
+  // the upgrade keeps a null prefix because its plaintext is not recoverable. The fixture holds no key, so one is committed
+  // for this stage only and removed afterwards, leaving every earlier oracle unchanged.
+  stage='actual current CLI upgrade populated0073 to0074';
+  const history73=await history(),data73Kept=await rows61(),schema73Kept=await schemaSnapshot(),issuer74=(await pool.query<{workspace_id:string;user_id:string}>('SELECT workspace_id,user_id FROM membership ORDER BY workspace_id,user_id LIMIT 1')).rows[0],key74=randomUUID();
+  assert.deepEqual(schema73Kept,schema73,'Schema73 is unchanged by its rolled-back probes before0074.');
+  await pool.query("INSERT INTO api_key(id,workspace_id,issuer_user_id,name,token_hash,scopes,expires_at)VALUES($1,$2,$3,'Legacy74',repeat('a',64),ARRAY['projects:read'],'infinity')",[key74,issuer74.workspace_id,issuer74.user_id]);
+  const legacy74=(await pool.query('SELECT to_jsonb(k) AS row FROM api_key k WHERE id=$1',[key74])).rows[0].row;
+  assert.match(runMigrate(0),/Database migrations applied: 0074\./);await assertSchema();
+  assert.deepEqual((await history()).slice(0,73),history73,'0074 preserves every published migration checksum.');
+  assert.deepEqual((await pool.query("SELECT to_jsonb(k)-'display_prefix'-'last_used_at' AS row,display_prefix,last_used_at FROM api_key k WHERE id=$1",[key74])).rows,[{row:legacy74,display_prefix:null,last_used_at:null}],'0074 keeps an existing key unchanged and derives no prefix or use time for it.');
+  const schema74=await schemaSnapshot(),row74=(row:{table_name?:string;column_name?:string;name?:string})=>row.table_name==='api_key'&&(row.column_name==='display_prefix'||row.column_name==='last_used_at'||row.name==='api_key_display_prefix_check');
+  assert.deepEqual({columns:schema74.columns.filter(row=>!row74(row)),constraints:schema74.constraints.filter(row=>!row74(row)),indexes:schema74.indexes},schema73Kept,'0074 changes no other populated73 column, index, key or constraint.');
+  assert.deepEqual(schema74.columns.filter(row74).map(row=>[row.column_name,row.data_type,row.is_nullable,row.column_default]),[['display_prefix','text','YES',null],['last_used_at','timestamp with time zone','YES',null]],'0074 adds two nullable columns without defaults.');
+  // Rolled-back probes: only the scheme plus exactly eight token characters is a prefix; a full token never fits.
+  const probe74=async(prefix:string)=>{const probe=await pool.connect();try{await probe.query('BEGIN');await probe.query('UPDATE api_key SET display_prefix=$2 WHERE id=$1',[key74,prefix]);return 1;}catch(error){assert.equal((error as {code?:string}).code,'23514');return 0;}finally{await probe.query('ROLLBACK').catch(()=>{});probe.release();}};
+  assert.equal(await probe74('t98k_Ab3-_x9Z'),1,'Schema74 admits an eight-character prefix.');assert.equal(await probe74('t98k_Ab3-_x9'),0,'Schema74 refuses a shorter prefix.');
+  assert.equal(await probe74(`t98k_${'A'.repeat(43)}`),0,'Schema74 refuses a full token.');assert.equal(await probe74('Ab3-_x9Z'),0,'Schema74 refuses a prefix without the scheme.');
+  await pool.query('DELETE FROM api_key WHERE id=$1',[key74]);
+  assert.deepEqual(await rows61(),data73Kept,'0074 preserves EVERY populated73 row and field once the stage key is removed.');
+  assert.equal((await pool.query("SELECT to_regnamespace('pgboss')::text AS schema")).rows[0].schema,bossSchema42,'0074 starts no queue.');
+  console.log('PASS actual CLI73-to74 adds only the nullable api_key.display_prefix (scheme plus eight characters) and last_used_at columns with no backfill; an existing key keeps a null prefix and use time, preserving every populated73 row, column, index, constraint, table and checksum');
   const upgradedHistory = sources.map(({ version, checksum }) => ({ version, checksum }));
   assert.deepEqual(await history(), upgradedHistory);
   const upgradedRecords = pre63(await records());
@@ -1125,11 +1150,11 @@ try {
     assert.equal((await pool.query(`SELECT 1 FROM ${table}`)).rowCount, 0, 'Upgrade must not grant instance authority or record an implicit grant.');
   }
   const upgradedSchema = await schemaSnapshot();
-  stage='actual current CLI schema0073 no-op';assert.match(runMigrate(0),/Database migrations already applied; all checksums verified\./);
+  stage='actual current CLI schema0074 no-op';assert.match(runMigrate(0),/Database migrations already applied; all checksums verified\./);
   assert.deepEqual(pre65(await identityRecords()),identity40,'Repeat migration cannot backfill basis or change existing identity evidence.');
   assert.deepEqual(await history(), upgradedHistory);
-  const noOp70Schema=await schemaSnapshot();assert.deepEqual(noOp70Schema, upgradedSchema);assert.deepEqual(noOp70Schema,schema73,'Actual73 no-op preserves the populated73 schema exactly.');
-  const noOp64Schema={columns:noOp70Schema.columns.filter(row=>!row70(row)&&!row71(row)&&!row72(row)&&!row73(row)),constraints:noOp70Schema.constraints.filter(row=>!row70(row)&&!row71(row)&&!row72(row)).flatMap(row=>row73(row)?schema72Kept.constraints.filter(prior=>prior.table_name===row.table_name&&prior.name===row.name):[row]),indexes:noOp70Schema.indexes.filter(row=>!row70(row)&&!row71(row)&&!row72(row))};assert.deepEqual(pre64(pre63(pre65(await rows54()))),pre64(pre63(data54)),'Actual69 no-op preserves all54 fields including RUM storage and unchanged replay settings.');assert.deepEqual(pre64(pre63(pre65(await rows55()))),pre64(pre63(data55)),'Actual69 no-op preserves every populated55 recording field except new declared saved defaults.');assert.deepEqual(await chunks55(),chunk55Before,'Actual69 no-op preserves every original55 chunk byte, hash, sequence and key.');assert.deepEqual((await pool.query('SELECT saved_name,saved_at,saved_revision FROM session_recording WHERE id=$1',[replay55Id])).rows,[saved56]);assert.deepEqual(pre64(pre63(pre65(await rows56()))),pre64(pre63(data56)),'Actual69 no-op preserves complete populated56 storage beyond the0063 cap projection (D3), the0064 removal and the0065 click-ID columns.');assert.deepEqual(await heatmap56Bytes(),heatmap56Before);assert.deepEqual(pre64(pre63(pre65(await rows57()))),pre64(pre63(data57)),'Actual69 no-op preserves populated57 board rows and actor receipt.');assert.deepEqual(await board57Bytes(),board57Before);assert.deepEqual(pre64(pre63(pre65(await rows58()))),pre64(pre63(data58)),'Actual69 no-op preserves every populated58 asset, observation, share and actor receipt.');assert.equal((await pool.query('SELECT 1 FROM heatmap_background')).rowCount,0,'Actual69 no-op creates no background sample.');assert.equal((await pool.query('SELECT 1 FROM project WHERE replay_retained_from IS NOT NULL')).rowCount,0);assert.deepEqual(pre64(pre63(pre65(await all51Rows()))),pre64(pre63(data53)),'Actual69 no-op preserves every populated53 row.');assert.equal((await pool.query('SELECT 1 FROM web_performance')).rowCount,0,'Actual69 no-op leaves RUM storage empty.');assert.deepEqual(pre64(pre63(pre65(await all51Rows()))),pre64(pre63(data52)),'Actual69 no-op preserves every populated52 row and retained Google observation.');
+  const noOp70Schema=await schemaSnapshot();assert.deepEqual(noOp70Schema, upgradedSchema);assert.deepEqual(noOp70Schema,schema74,'Actual74 no-op preserves the populated74 schema exactly.');
+  const noOp64Schema={columns:noOp70Schema.columns.filter(row=>!row70(row)&&!row71(row)&&!row72(row)&&!row73(row)&&!row74(row)),constraints:noOp70Schema.constraints.filter(row=>!row70(row)&&!row71(row)&&!row72(row)&&!row74(row)).flatMap(row=>row73(row)?schema72Kept.constraints.filter(prior=>prior.table_name===row.table_name&&prior.name===row.name):[row]),indexes:noOp70Schema.indexes.filter(row=>!row70(row)&&!row71(row)&&!row72(row))};assert.deepEqual(pre64(pre63(pre65(await rows54()))),pre64(pre63(data54)),'Actual69 no-op preserves all54 fields including RUM storage and unchanged replay settings.');assert.deepEqual(pre64(pre63(pre65(await rows55()))),pre64(pre63(data55)),'Actual69 no-op preserves every populated55 recording field except new declared saved defaults.');assert.deepEqual(await chunks55(),chunk55Before,'Actual69 no-op preserves every original55 chunk byte, hash, sequence and key.');assert.deepEqual((await pool.query('SELECT saved_name,saved_at,saved_revision FROM session_recording WHERE id=$1',[replay55Id])).rows,[saved56]);assert.deepEqual(pre64(pre63(pre65(await rows56()))),pre64(pre63(data56)),'Actual69 no-op preserves complete populated56 storage beyond the0063 cap projection (D3), the0064 removal and the0065 click-ID columns.');assert.deepEqual(await heatmap56Bytes(),heatmap56Before);assert.deepEqual(pre64(pre63(pre65(await rows57()))),pre64(pre63(data57)),'Actual69 no-op preserves populated57 board rows and actor receipt.');assert.deepEqual(await board57Bytes(),board57Before);assert.deepEqual(pre64(pre63(pre65(await rows58()))),pre64(pre63(data58)),'Actual69 no-op preserves every populated58 asset, observation, share and actor receipt.');assert.equal((await pool.query('SELECT 1 FROM heatmap_background')).rowCount,0,'Actual69 no-op creates no background sample.');assert.equal((await pool.query('SELECT 1 FROM project WHERE replay_retained_from IS NOT NULL')).rowCount,0);assert.deepEqual(pre64(pre63(pre65(await all51Rows()))),pre64(pre63(data53)),'Actual69 no-op preserves every populated53 row.');assert.equal((await pool.query('SELECT 1 FROM web_performance')).rowCount,0,'Actual69 no-op leaves RUM storage empty.');assert.deepEqual(pre64(pre63(pre65(await all51Rows()))),pre64(pre63(data52)),'Actual69 no-op preserves every populated52 row and retained Google observation.');
   assert.deepEqual(pre64(pre63(pre65(await rows59()))),pre64(pre63(data59)),'Actual69 no-op preserves EVERY prior59 table field/row beyond the0063 cap projection (D3), the0064 removal and the0065 click-ID columns.');for(const table of shareTables60)assert.equal((await pool.query('SELECT 1 FROM '+pg.escapeIdentifier(table))).rowCount,0,'Actual69 no-op creates no public board grant or actor receipt.');
   assert.deepEqual(pre63(await records()), upgradedRecords);
   await assertSchema();

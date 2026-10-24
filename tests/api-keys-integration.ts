@@ -28,7 +28,10 @@ export async function runApiKeyChecks(options: Options): Promise<void> {
   assert.equal(Buffer.from(created.token.slice(5), 'base64url').length, 32);
   const lifetime = created.key.expiresAt.getTime() - created.key.createdAt.getTime();
   assert.ok(Math.abs(lifetime - 90 * 86_400_000) < 1000, 'Default keys must expire after 90 days.');
-  const dtoFields = ['id', 'workspaceId', 'issuerUserId', 'name', 'scopes', 'createdAt', 'expiresAt', 'revokedAt'].sort();
+  const dtoFields = ['id', 'workspaceId', 'issuerUserId', 'name', 'scopes', 'createdAt', 'expiresAt', 'revokedAt', 'displayPrefix', 'lastUsedAt'].sort();
+  assert.equal(created.key.displayPrefix, created.token.slice(0, 13), 'Creation records the scheme and the first 8 token characters.');
+  assert.match(created.key.displayPrefix!, /^t98k_[A-Za-z0-9_-]{8}$/);
+  assert.equal(created.key.lastUsedAt, null, 'A new key has never been used.');
   assert.deepEqual(Object.keys(created.key).sort(), dtoFields, 'Creation must not expose a digest.');
   const stored = await pool.query('SELECT token_hash FROM api_key WHERE id=$1', [created.key.id]);
   assert.equal(stored.rows[0].token_hash, createHash('sha256').update(created.token).digest('hex'), 'Only the digest is stored.');
@@ -52,6 +55,86 @@ export async function runApiKeyChecks(options: Options): Promise<void> {
   assert.ok(Math.abs(longest.key.expiresAt.getTime() - longest.key.createdAt.getTime() - 365 * 86_400_000) < 1000);
   await pool.query("UPDATE api_key SET created_at=clock_timestamp()-interval '2 days',expires_at=clock_timestamp()-interval '1 day' WHERE id=$1", [longest.key.id]);
   await rejects(authenticateApiKey(longest.token), 401, 'Expired keys must fail closed.');
+
+  // #353: the list shows each key's display prefix and last use. Last use is written after successful authentication,
+  // off the request path and at most once a minute per key; neither the token nor its digest is ever listed or logged.
+  const usage = async (id: string) => (await pool.query<{ lastUsedAt: Date | null; version: string }>('SELECT last_used_at AS "lastUsedAt",xmin::text AS version FROM api_key WHERE id=$1', [id])).rows[0];
+  const recorded = async (id: string, after: Date | null = null) => {
+    for (const deadline = Date.now() + 5000; ; await new Promise((resolve) => setTimeout(resolve, 25))) {
+      const row = await usage(id);
+      if (row.lastUsedAt !== null && (after === null || row.lastUsedAt > after)) return row;
+      assert.ok(Date.now() < deadline, 'A successful authentication must record its use within 5 seconds.');
+    }
+  };
+  // A refused or throttled authentication gets the same time to (wrongly) write before its row is checked.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 750));
+  const captured: string[] = [];
+  const consoleMethods = ['log', 'info', 'warn', 'error', 'debug'] as const;
+  const originalConsole = consoleMethods.map((name) => console[name]);
+  for (const name of consoleMethods) console[name] = (...args: unknown[]) => { captured.push(args.map((arg) => typeof arg === 'string' ? arg : JSON.stringify(arg) ?? String(arg)).join(' ')); };
+  const usageKey = await createApiKey(workspaceId, options.ownerId, { name: 'Usage tracking', scopes: ['projects:read'] });
+  const legacyToken = `t98k_${randomBytes(32).toString('base64url')}`, legacyId = randomUUID();
+  const secrets = [usageKey.token, usageKey.token.slice(13), createHash('sha256').update(usageKey.token).digest('hex'), legacyToken, createHash('sha256').update(legacyToken).digest('hex')];
+  try {
+    const revokedUse = await createApiKey(workspaceId, options.ownerId, { name: 'Revoked before use', scopes: ['projects:read'] });
+    await revokeApiKey(workspaceId, options.ownerId, revokedUse.key.id);
+    await rejects(authenticateApiKey(revokedUse.token), 401, 'Revoked keys must fail closed.');
+    await settle();
+    assert.equal((await usage(revokedUse.key.id)).lastUsedAt, null, 'A revoked key records no use.');
+    assert.equal((await usage(longest.key.id)).lastUsedAt, null, 'An expired key records no use.');
+    assert.equal((await usage(usageKey.key.id)).lastUsedAt, null, 'Creation records no use.');
+
+    await authorizeApiKey(usageKey.token, workspaceId, 'projects:read');
+    const first = await recorded(usageKey.key.id);
+    await authorizeApiKey(usageKey.token, workspaceId, 'projects:read');
+    await authenticateApiKey(usageKey.token);
+    await settle();
+    assert.deepEqual(await usage(usageKey.key.id), first, 'Uses within a minute of the recorded one write nothing (same time, same row version).');
+    await pool.query("UPDATE api_key SET last_used_at=last_used_at-interval '61 seconds' WHERE id=$1", [usageKey.key.id]);
+    const aged = (await usage(usageKey.key.id)).lastUsedAt!;
+    await authenticateApiKey(usageKey.token);
+    const next = await recorded(usageKey.key.id, aged);
+    assert.ok(next.lastUsedAt! >= first.lastUsedAt!, 'A use more than a minute after the recorded one writes the new time.');
+    // Requests authenticate more than once; near-simultaneous authentications of a stale key queue one write, not one each.
+    await pool.query("UPDATE api_key SET last_used_at=last_used_at-interval '61 seconds' WHERE id=$1", [usageKey.key.id]);
+    const staleAt = (await usage(usageKey.key.id)).lastUsedAt!;
+    const poolQuery = pool.query;
+    let useWrites = 0;
+    pool.query = function (this: typeof pool, ...args: unknown[]) {
+      if (typeof args[0] === 'string' && args[0].startsWith('UPDATE api_key SET last_used_at')) useWrites++;
+      return (poolQuery as (...input: unknown[]) => unknown).apply(this, args);
+    } as typeof pool.query;
+    try {
+      await Promise.all([authenticateApiKey(usageKey.token), authorizeApiKey(usageKey.token, workspaceId, 'projects:read')]);
+    } finally { pool.query = poolQuery; }
+    assert.equal(useWrites, 1, 'Two concurrent authentications of a stale key queue exactly one last-use write.');
+    const latest = await recorded(usageKey.key.id, staleAt);
+
+    // A key issued before 0074 has no recorded prefix; it is listed without one and still records its use.
+    await pool.query("INSERT INTO api_key(id,workspace_id,issuer_user_id,name,token_hash,scopes,expires_at) VALUES($1,$2,$3,'Issued before prefixes',$4,ARRAY['projects:read'],clock_timestamp()+interval '1 day')",
+      [legacyId, workspaceId, options.ownerId, createHash('sha256').update(legacyToken).digest('hex')]);
+    assert.equal((await authenticateApiKey(legacyToken)).id, legacyId);
+    await recorded(legacyId);
+    const usageList = await listApiKeys(workspaceId, options.ownerId);
+    const usageEntry = usageList.keys.find((key) => key.id === usageKey.key.id)!, legacyEntry = usageList.keys.find((key) => key.id === legacyId)!;
+    assert.equal(usageEntry.displayPrefix, usageKey.token.slice(0, 13));
+    assert.deepEqual(usageEntry.lastUsedAt, latest.lastUsedAt, 'The list shows the recorded last use.');
+    assert.equal(legacyEntry.displayPrefix, null, 'A pre-existing key shows no prefix; none is derived.');
+    assert.ok(legacyEntry.lastUsedAt instanceof Date);
+    assert.equal(usageList.keys.find((key) => key.id === revokedUse.key.id)!.lastUsedAt, null);
+    const listedText = JSON.stringify(usageList);
+    for (const secret of [...secrets, usageKey.token.slice(0, 14), legacyToken.slice(0, 13)]) assert.equal(listedText.includes(secret), false, 'The list carries only the 8-character prefix, never more of a token or its digest.');
+    // Nothing outside api_key.token_hash, including audit tables, holds a token, its secret part or its digest.
+    const tables = (await pool.query<{ name: string }>("SELECT tablename AS name FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map((row) => row.name);
+    for (const table of tables) {
+      const projection = `(to_jsonb(t)${table === 'api_key' ? "-'token_hash'" : ''})`;
+      const leaks = await pool.query(`SELECT 1 FROM "${table}" t WHERE EXISTS(SELECT 1 FROM unnest($1::text[]) s WHERE strpos(${projection}::text,s)>0) LIMIT 1`, [secrets]);
+      assert.equal(leaks.rowCount, 0, `${table} must not hold an API token or its digest.`);
+    }
+  } finally { consoleMethods.forEach((name, index) => { console[name] = originalConsole[index]; }); }
+  for (const line of captured) for (const secret of secrets) assert.equal(line.includes(secret), false, 'Logs must not carry an API token or its digest.');
+  await pool.query('DELETE FROM api_key WHERE id=$1', [legacyId]);
+  console.log('PASS API-key display prefix and last use: recorded at creation and on successful authentication only, at most once a minute, pre-existing keys unprefixed, no token or digest listed, stored elsewhere or logged');
 
   const memberId = randomUUID();
   await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [memberId, 'API-key member', `${randomUUID()}@keys.integration.test`]);
@@ -156,7 +239,18 @@ export async function runApiKeyChecks(options: Options): Promise<void> {
   await http(managementPath, 400, cookie, { name: 'Invalid', scopes: ['projects:read'], unknown: true });
   await http(managementPath, 403, bearer);
   await http(managementPath, 403, bearer, { name: 'Cannot delegate', scopes: ['projects:read'] });
+  assert.equal(httpKey.body.key.displayPrefix, bearer.token.slice(0, 13));
+  assert.equal(httpList.body.keys.find((key: { id: string }) => key.id === httpKey.body.key.id).lastUsedAt, null);
   await http(`/api/workspaces/${workspaceId}/projects`, 200, bearer);
+  const httpUse = await recorded(httpKey.body.key.id);
+  const httpUsed = (await http(managementPath, 200, cookie)).body.keys.find((key: { id: string }) => key.id === httpKey.body.key.id);
+  assert.equal(httpUsed.lastUsedAt, httpUse.lastUsedAt!.toISOString(), 'The served list shows the last use recorded by a bearer request.');
+  assert.equal(httpUsed.displayPrefix, bearer.token.slice(0, 13));
+  const revokedHttp = await createApiKey(workspaceId, options.ownerId, { name: 'Revoked HTTP', scopes: ['projects:read'] });
+  await revokeApiKey(workspaceId, options.ownerId, revokedHttp.key.id);
+  await http(`/api/workspaces/${workspaceId}/projects`, 401, { token: revokedHttp.token });
+  await settle();
+  assert.equal((await usage(revokedHttp.key.id)).lastUsedAt, null, 'A refused bearer request records no use.');
   await http(`/api/workspaces/${options.workspaceId}/projects`, 404, bearer);
   const projectOrigin = `https://${randomUUID()}.keys.integration.test`;
   const projectResult = await http(`/api/workspaces/${workspaceId}/projects`, 201, bearer, { name: 'API-created project', origin: projectOrigin });

@@ -7,3 +7,10 @@ export function formatReportInstant(iso:string,timeZone:string):string {
     return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${timeZone}`;
   } catch { return iso; }
 }
+
+/** Formats an instant relative to now in the browser's locale, such as "3 hours ago". */
+export function formatRelativeInstant(iso:string):string {
+  const seconds=(new Date(iso).getTime()-Date.now())/1000,rtf=new Intl.RelativeTimeFormat(undefined,{numeric:'auto'});
+  for(const [unit,size] of [['year',31536000],['month',2592000],['week',604800],['day',86400],['hour',3600],['minute',60]] as const)if(Math.abs(seconds)>=size)return rtf.format(Math.round(seconds/size),unit);
+  return rtf.format(Math.round(seconds),'second');
+}

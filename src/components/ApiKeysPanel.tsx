@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { useConfirmDialog } from '@ten98/ui'
+import { EmptyState, InlineCode, Text, useConfirmDialog } from '@ten98/ui'
 import type { FormEvent } from 'react'
 import { api, ApiError, errMsg } from '../lib/api'
+import { formatRelativeInstant } from '../lib/report-time'
 
 interface ApiKey {
   id: string
@@ -12,6 +13,8 @@ interface ApiKey {
   createdAt: string
   expiresAt: string
   revokedAt: string | null
+  displayPrefix: string | null
+  lastUsedAt: string | null
 }
 
 interface CreatedKey {
@@ -364,19 +367,16 @@ function ApiKeysInner({ workspaceId, onUnauthorized }: { workspaceId: string; on
           </p>
         )}
         {keys !== null && keys.length === 0 && (
-          <div className="empty">
-            <p>
-              <strong>No API keys yet.</strong>
-            </p>
-            <p>Create one above to let scripts or CI talk to this workspace.</p>
-          </div>
+          <EmptyState title="No API keys yet." description="Create one above to let scripts or CI talk to this workspace." />
         )}
         {keys !== null && keys.length > 0 && (
           <div className="table-wrap">
-            <table style={{ minWidth: '48rem' }}>
+            <table style={{ minWidth: '60rem' }}>
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Key</th>
+                  <th>Last used</th>
                   <th>Scopes</th>
                   <th>Created</th>
                   <th>Expires</th>
@@ -388,6 +388,16 @@ function ApiKeysInner({ workspaceId, onUnauthorized }: { workspaceId: string; on
                 {keys.map((k) => (
                   <tr key={k.id}>
                     <td style={{ minWidth: '10rem', maxWidth: '18rem', overflowWrap: 'anywhere' }}>{k.name}</td>
+                    <td>
+                      {k.displayPrefix
+                        ? <InlineCode>{k.displayPrefix}…</InlineCode>
+                        : <Text as="span" size="sm" tone="muted">Created before prefixes were recorded</Text>}
+                    </td>
+                    <td>
+                      {k.lastUsedAt
+                        ? <Text as="time" dateTime={k.lastUsedAt} title={new Date(k.lastUsedAt).toLocaleString()}>{formatRelativeInstant(k.lastUsedAt)}</Text>
+                        : <Text as="span" tone="muted">Never</Text>}
+                    </td>
                     <td className="dim" style={{ minWidth: '12rem' }}>{k.scopes.join(', ')}</td>
                     <td className="dim">{fmt(k.createdAt)}</td>
                     <td className="dim">{fmt(k.expiresAt)}</td>

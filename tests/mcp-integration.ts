@@ -54,6 +54,17 @@ export async function runMcpChecks(){
     const init=await rpc('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'native-protocol-fixture',version:'1'}},all.token,false);assert.equal(init.status,200);assert.equal(init.wire.result.protocolVersion,'2025-11-25');assert.equal(init.wire.result.serverInfo.version,appManifest.version);
     const subscription=await rpc('subscriptions/listen',{subscriptions:[]});assert.equal(subscription.status,200);assert.ok(subscription.wire.error);assert.equal(subscription.complete,true);
     console.log('PASS actual HTTP modern/legacy discovery, safe whoami, finite transports and no advertised extra capabilities');
+    // #353: an MCP request records the key's last use off the request path, at most once a minute; a refused one records none.
+    {
+      const usage=async(id:string)=>(await pool.query('SELECT last_used_at,xmin::text AS version FROM api_key WHERE id=$1',[id])).rows[0] as {last_used_at:Date|null;version:string};
+      const deadline=Date.now()+5000;while((await usage(all.key.id)).last_used_at===null){assert.ok(Date.now()<deadline,'MCP use must be recorded within 5 seconds.');await new Promise(resolve=>setTimeout(resolve,25));}
+      const recorded=await usage(all.key.id);assert.equal((await rpc('tools/list')).status,200);assert.equal((await rpc('tools/list')).status,200);await new Promise(resolve=>setTimeout(resolve,750));
+      assert.deepEqual(await usage(all.key.id),recorded,'MCP requests within a minute of the recorded use write nothing.');
+      const refused=await createApiKey(workspace,ownerId,{name:'MCP refused',scopes:['prompts:read']});await revokeApiKey(workspace,ownerId,refused.key.id);
+      assert.equal((await rpc('tools/list',{},refused.token)).status,401);await new Promise(resolve=>setTimeout(resolve,750));
+      assert.equal((await usage(refused.key.id)).last_used_at,null,'A refused MCP request records no use.');
+      console.log('PASS MCP records a key\'s last use once a minute and never for a refused key');
+    }
     // The lane owner has no verified factor: while the workspace requires one, the key is refused on every invocation, then resumes.
     await pool.query('INSERT INTO workspace_two_factor_requirement(workspace_id) VALUES($1)',[workspace]);
     try{const suspended=await rpc('tools/list');assert.equal(suspended.status,401);assert.equal(suspended.wire.error.message,'A valid native Bearer API key is required.');}
@@ -143,7 +154,8 @@ export async function runMcpChecks(){
       const persist=()=>writeFileSync(output,JSON.stringify(reportEvidence,null,2)+'\n');persist();
       const originalRows:Record<string,string[]>={},keys:string[]=[],ownedProjects:string[]=[];
       const tables=(await pool.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename<>'request_limit' ORDER BY tablename")).rows.map((r:any)=>r.tablename as string);
-      const rows=async(table:string)=>{assert.match(table,/^[A-Za-z_][A-Za-z0-9_]*$/);return(await pool.query('SELECT to_jsonb(t)::text AS row FROM "'+table+'" t ORDER BY 1')).rows.map((r:any)=>r.row as string);};
+      // A read records its key's last use by design (#353), so that one column is outside the unchanged-row oracle.
+      const rows=async(table:string)=>{assert.match(table,/^[A-Za-z_][A-Za-z0-9_]*$/);return(await pool.query('SELECT (to_jsonb(t)'+(table==='api_key'?"-'last_used_at'":'')+')::text AS row FROM "'+table+'" t ORDER BY 1')).rows.map((r:any)=>r.row as string);};
       for(const table of tables)originalRows[table]=await rows(table);
       const originalHash=createHash('sha256').update(JSON.stringify(originalRows)).digest('hex');
       const rw=randomUUID(),ru=randomUUID();

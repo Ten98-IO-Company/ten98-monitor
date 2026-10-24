@@ -84,7 +84,7 @@ async function rejectMissingCapsule(){
 
 try{
   assert.equal((await pool.query("SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN('r','p','v','m','S','f') LIMIT 1")).rowCount,0,'Use an initially empty owned database.');
-  const sources=await migrationSources();assert.equal(sources.at(-1)?.version,'0073');
+  const sources=await migrationSources();assert.equal(sources.at(-1)?.version,'0074');
   if(scenario==='ai_search'){
     stage='AI-only modern reference after fresh install';cli('migrate',0);await assertSchema();
     const stable=await getProviderAccountIdentityKey(2),f=await fixture(),prompt=randomUUID(),version=randomUUID(),price=aiSearchPriceEvidence(),seed=await pool.connect();

@@ -11,6 +11,8 @@ type Role = WorkspaceRole;
 export type ApiKeyDto = {
   id: string; workspaceId: string; issuerUserId: string; name: string; scopes: ApiKeyScope[];
   createdAt: Date; expiresAt: Date; revokedAt: Date | null;
+  /** Scheme plus the first 8 token characters; null for keys created before prefixes were recorded. */
+  displayPrefix: string | null; lastUsedAt: Date | null;
 };
 export type ApiKeyPrincipal = { id: string; userId: string; workspaceId: string; role: Role; scopes: ApiKeyScope[] };
 const idInput = z.uuid();
@@ -19,7 +21,7 @@ const createInput = z.object({
   scopes: z.array(z.enum(apiKeyScopes)).min(1).max(apiKeyScopes.length).refine((scopes) => new Set(scopes).size === scopes.length),
   expiresInDays: z.number().int().min(1).max(365).default(90),
 }).strict();
-const fields = 'id,workspace_id AS "workspaceId",issuer_user_id AS "issuerUserId",name,scopes,created_at AS "createdAt",expires_at AS "expiresAt",revoked_at AS "revokedAt"';
+const fields = 'id,workspace_id AS "workspaceId",issuer_user_id AS "issuerUserId",name,scopes,created_at AS "createdAt",expires_at AS "expiresAt",revoked_at AS "revokedAt",display_prefix AS "displayPrefix",last_used_at AS "lastUsedAt"';
 
 function parse<T extends z.ZodType>(schema: T, input: unknown): z.output<T> {
   const result = schema.safeParse(input);
@@ -34,6 +36,9 @@ function validToken(token: string): boolean {
   return bytes.length === 32 && bytes.toString('base64url') === token.slice(5);
 }
 function digest(token: string) { return createHash('sha256').update(token).digest('hex'); }
+// 8 of the 43 base64url characters disclose 48 of the token's 256 random bits and leave 208 secret, far above the 128-bit
+// floor, while still telling keys apart at a glance. Recorded only at creation; never derived from the stored hash.
+const displayPrefixLength = 't98k_'.length + 8;
 
 export function parseApiKeyHeaders(headers: Headers): string | null {
   const authorization = headers.get('authorization');
@@ -80,9 +85,9 @@ export async function createApiKey(workspaceId: string, userId: string, input: u
     if (details.scopes.some((scope) => !allows(role, scope))) throw new FoundationError(403, 'These scopes exceed your current workspace role.');
     const token = `t98k_${randomBytes(32).toString('base64url')}`;
     const result = await client.query<ApiKeyDto>(
-      `INSERT INTO api_key(id,workspace_id,issuer_user_id,name,token_hash,scopes,expires_at)
-       VALUES($1,$2,$3,$4,$5,$6,clock_timestamp()+$7::integer*interval '1 day') RETURNING ${fields}`,
-      [randomUUID(), workspaceId, userId, details.name, digest(token), details.scopes, details.expiresInDays],
+      `INSERT INTO api_key(id,workspace_id,issuer_user_id,name,token_hash,scopes,expires_at,display_prefix)
+       VALUES($1,$2,$3,$4,$5,$6,clock_timestamp()+$7::integer*interval '1 day',$8) RETURNING ${fields}`,
+      [randomUUID(), workspaceId, userId, details.name, digest(token), details.scopes, details.expiresInDays, token.slice(0, displayPrefixLength)],
     );
     return { key: result.rows[0], token };
   });
@@ -102,16 +107,33 @@ export async function revokeApiKey(workspaceId: string, userId: string, keyId: s
   });
 }
 
+// Records a successful use at most once a minute per key. It runs on its own pooled connection and is not awaited, so a
+// request neither waits for it nor holds its row lock; SKIP LOCKED leaves a row another transaction holds to a later use.
+// A request may authenticate more than once, so one write per key is in flight per process; others are dropped, not queued.
+const recordingUse = new Set<string>();
+function recordApiKeyUse(id: string): void {
+  if (recordingUse.has(id)) return;
+  recordingUse.add(id);
+  void getDatabase().pool.query(
+    `UPDATE api_key SET last_used_at=clock_timestamp() WHERE id=(SELECT id FROM api_key WHERE id=$1
+       AND (last_used_at IS NULL OR last_used_at<clock_timestamp()-interval '1 minute') FOR NO KEY UPDATE SKIP LOCKED)`, [id],
+  ).catch(() => console.error('API key last-used update failed; check database availability.'))
+    .finally(() => recordingUse.delete(id));
+}
+
 export async function authenticateApiKey(token: string, client?: Pick<PoolClient, 'query'>): Promise<ApiKeyPrincipal> {
   if (typeof token !== 'string' || !validToken(token)) invalidKey();
-  const result = await (client ?? getDatabase().pool).query<ApiKeyPrincipal>(
-    `SELECT k.id,k.issuer_user_id AS "userId",k.workspace_id AS "workspaceId",m.role,k.scopes
+  const result = await (client ?? getDatabase().pool).query<ApiKeyPrincipal & { useDue: boolean }>(
+    `SELECT k.id,k.issuer_user_id AS "userId",k.workspace_id AS "workspaceId",m.role,k.scopes,
+       (k.last_used_at IS NULL OR k.last_used_at<clock_timestamp()-interval '1 minute') AS "useDue"
      FROM api_key k JOIN membership m ON m.workspace_id=k.workspace_id AND m.user_id=k.issuer_user_id JOIN "user" u ON u.id=k.issuer_user_id
      WHERE k.token_hash=$1 AND k.revoked_at IS NULL AND k.expires_at>clock_timestamp() AND u.closed_at IS NULL
        AND (u."twoFactorEnabled" OR NOT EXISTS (SELECT 1 FROM workspace_two_factor_requirement r WHERE r.workspace_id=k.workspace_id))`, [digest(token)],
   );
-  const principal = result.rows[0];
-  if (!principal || !workspaceRoles.includes(principal.role as WorkspaceRole)) invalidKey();
+  const row = result.rows[0];
+  if (!row || !workspaceRoles.includes(row.role as WorkspaceRole)) invalidKey();
+  const { useDue, ...principal } = row;
+  if (useDue) recordApiKeyUse(principal.id);
   return { ...principal, scopes: principal.scopes.filter((scope) => apiKeyScopes.includes(scope) && allows(principal.role, scope)) };
 }
 
