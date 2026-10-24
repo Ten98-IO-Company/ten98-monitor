@@ -45,7 +45,7 @@ try{
   assert.deepEqual(item.bodyEvidence,{status:'available',version:'static-dom-body-v1',utf8Bytes:bytes,textIncluded:false,text:null});
   assert.ok(!JSON.stringify(listed).includes(literal));
   const detailPath=base+'/'+run.id+'/pages/'+item.id,reading=page.waitForResponse(response=>new URL(response.url()).pathname===detailPath);
-  await p.getByRole('region',{name:'Recorded audit pages',exact:true}).getByRole('button',{name:'View page',exact:true}).click();
+  await p.getByRole('region',{name:'Recorded audit pages',exact:true}).getByRole('button',{name:/^View page: /}).click();
   const detailResponse=await reading;assert.equal(detailResponse.status(),200);const detail=await detailResponse.json();
   assert.deepEqual(detail.page.bodyEvidence,{...item.bodyEvidence,textIncluded:true,text:expected});
   assert.equal(detail.page.analysis.facts.contentHash,createHash('sha256').update(expected).digest('hex'));assert.equal(detail.page.analysis.facts.wordCount,expected.split(' ').length);
@@ -69,8 +69,9 @@ try{
   await pool.query('UPDATE workspace SET raw_provider_evidence_days=3650,derived_history_days=3650 WHERE id=$1',[group.workspace.id]);
   const afterExtension=await context.request.get(appUrl+detailPath);assert.equal(afterExtension.status(),200);
   assert.deepEqual((await afterExtension.json()).page.bodyEvidence,{status:'expired',version:'static-dom-body-v1',utf8Bytes:null,textIncluded:false,text:null});
-  await page.reload({waitUntil:'networkidle'});await p.getByRole('button',{name:'View audit',exact:true}).click();await p.getByRole('navigation',{name:'Audit results',exact:true}).getByRole('button',{name:'Pages',exact:true}).click();
-  await p.getByRole('region',{name:'Recorded audit pages',exact:true}).getByRole('button',{name:'View page',exact:true}).click();await captured.locator(':scope > summary').click();
+  // A fresh load of the audit list (a reload would reopen the URL's selected audit page).
+  await page.goto(href(group,'audits'),{waitUntil:'networkidle'});await p.getByRole('button',{name:'View audit',exact:true}).click();await p.getByRole('navigation',{name:'Audit results',exact:true}).getByRole('button',{name:'Pages',exact:true}).click();
+  await p.getByRole('region',{name:'Recorded audit pages',exact:true}).getByRole('button',{name:/^View page: /}).click();await captured.locator(':scope > summary').click();
   await captured.getByText('Captured page text expired under workspace raw-evidence retention.',{exact:true}).waitFor();assert.equal(await captured.locator('div.mono').count(),0);
   await runRetentionBatch(group.main.id);assert.equal((await pool.query('SELECT body_text FROM site_audit_page WHERE id=$1',[item.id])).rows[0].body_text,null);
   assert.deepEqual((await runAudit(run.id)).requests,[],'Completed replay cannot recrawl or restore cleared body.');

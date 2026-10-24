@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFixture,createPromptCase} from './fixtures.mjs';
 import {fixtureGuard} from './guard.mjs';
-import {browserSession,providerCounts,href,assertLayout,loseFirstPost,holdNextGet,bounded,projectSection,captureFailure} from './browser.mjs';
+import {browserSession,providerCounts,href,assertLayout,loseFirstPost,holdNextGet,bounded,projectSection,captureFailure,accountMenu} from './browser.mjs';
 import {runPrompt} from './jobs.mjs';
 import {getDatabase,closeDatabase} from '../../src/server/db.ts';
 import {stopJobs} from '../../src/server/jobs.ts';
@@ -21,9 +21,13 @@ async function filter(page,text,status='active'){
   await lib.getByRole('button',{name:'Apply filters',exact:true}).waitFor({state:'visible'});
 }
 async function review(page,prompt){await page.locator('#pl-run-'+prompt.id).click();await execution(page).getByRole('heading',{name:'Review a prompt run',exact:true}).waitFor();}
-async function prepare(page,group,{both=false,system=''}={}){
+async function prepare(page,group,{both=false,system='',fresh=false}={}){
   const panel=execution(page);await panel.getByLabel('OpenRouter connection',{exact:true}).selectOption(group.connections.openrouter);
-  if(both)await panel.getByRole('checkbox',{name:'GPT-4o',exact:true}).check();
+  // Models start unselected; the free catalog refresh is needed once per web process (synthetic in provider.mjs).
+  if(await panel.getByText('Model list unavailable',{exact:true}).count())await panel.getByRole('button',{name:'Refresh model list',exact:true}).click();
+  const choice=id=>panel.getByRole('region',{name:'Model catalog choices',exact:true}).getByRole('checkbox',{name:new RegExp('· '+id+'$')});
+  await choice('openai/gpt-4o-mini').check();if(both)await choice('openai/gpt-4o').check();
+  if(fresh)await panel.getByLabel('Answer source',{exact:true}).selectOption('fresh');
   if(system){await panel.getByText('Optional system message',{exact:true}).click();await panel.getByLabel('System message',{exact:true}).fill(system);}
   await panel.getByRole('checkbox',{name:'This connection uses OpenRouter funded credits.',exact:true}).check();
   const response=page.waitForResponse(response=>response.url().endsWith('/prompt-executions/quote')&&response.request().method()==='POST');
@@ -32,7 +36,9 @@ async function prepare(page,group,{both=false,system=''}={}){
 }
 async function start(page,n=1){const panel=execution(page),response=page.waitForResponse(response=>response.url().endsWith('/prompt-executions/comparisons')&&response.request().method()==='POST');
   await panel.getByRole('button',{name:'Start '+n+' paid '+(n===1?'request':'requests'),exact:true}).click();const received=await response;assert.equal(received.status(),202);const result=await received.json();await panel.getByRole('heading',{name:'Prompt run',exact:true}).waitFor();return result.comparison;}
-async function back(page){await execution(page).getByRole('button',{name:'Back to library',exact:true}).click();await library(page).getByRole('button',{name:'Recent runs',exact:true}).waitFor();}
+async function back(page){await execution(page).getByRole('button',{name:'Back to saved prompts',exact:true}).click();await library(page).getByRole('button',{name:'Recent runs',exact:true}).waitFor();}
+// One "not sent" line per run card (the run cost summary repeats it as its status reason).
+const notSent=page=>execution(page).locator('article > p').filter({hasText:/^This request was not sent\.$/});
 function browserClean(){assert.deepEqual(session.errors,[]);assert.deepEqual(session.outbound,[]);}
 
 try{
@@ -71,14 +77,14 @@ try{
   const comparison=await start(page,2);await runPrompt(comparison.id);await execution(page).getByRole('button',{name:'Refresh status',exact:true}).click();
   for(const model of ['GPT-4o-mini','GPT-4o'])await execution(page).getByRole('region',{name:'Answer from '+model,exact:true}).waitFor();
   assert.equal(await execution(page).locator('script,img,iframe').count(),0);assert.equal(await page.evaluate(()=>window.syntheticUnsafe),undefined);
-  assert.match(await execution(page).innerText(),/Credit charge: USD 0\.000013/);
+  assert.match(await execution(page).innerText(),/Settled price\s+USD 0\.000013/);
   for(const details of await execution(page).locator('details').filter({has:page.getByText('Reported citations (1)',{exact:true})}).all())await details.locator('summary').click();
   assert.equal(await execution(page).locator('a[href^="https://citation.example.com/"]').count(),2);
   for(const link of await execution(page).locator('a[href^="https://citation.example.com/"]').all()){assert.equal(await link.getAttribute('rel'),'noopener noreferrer');assert.equal(await link.getAttribute('target'),'_blank');}
   assert.equal((await providerCounts())['prompt-dispatch']-(initial['prompt-dispatch']??0),2);await assertLayout(page,'prompt-two-model');browserClean();
   console.log('PASS historical exact messages/two-model quote, explicit dispatch, plain text/citations, exact charges and360px answer cards.');
 
-  stage='failed detail refresh preserves visibly stale answer';const detailPath='**'+B+'/comparisons/'+comparison.id;
+  stage='failed detail refresh preserves visibly stale answer';const detailPath='**'+B+'/comparisons/'+comparison.id+'/summary';
   const unavailable=route=>route.fulfill({status:503,json:{error:'Synthetic saved-status refresh unavailable.'}});await page.route(detailPath,unavailable);
   await execution(page).getByRole('button',{name:'Refresh status',exact:true}).click();await execution(page).getByRole('alert').waitFor();
   assert.equal(await execution(page).getByRole('region',{name:/^Answer from/}).count(),2);await page.unroute(detailPath,unavailable);
@@ -88,13 +94,13 @@ try{
   await pool.query('UPDATE prompt_execution_quote SET input=NULL,messages=NULL,input_purged_at=clock_timestamp() WHERE id=$1',[comparison.quoteId]);
   await execution(page).getByRole('button',{name:'Refresh status',exact:true}).click();await execution(page).getByText(/Copied execution input expired/).waitFor();
   assert.equal(await execution(page).getByRole('region',{name:/^Answer from/}).count(),0);assert.equal(await execution(page).getByText('Answer and citations expired under workspace retention.',{exact:true}).count(),2);
-  assert.ok(await execution(page).getByText(group.prompts.original.text,{exact:true}).isVisible());assert.match(await execution(page).innerText(),/Credit charge: USD 0\.000013/);
+  assert.ok(await execution(page).getByText(group.prompts.original.text,{exact:true}).isVisible());assert.match(await execution(page).innerText(),/Settled price\s+USD 0\.000013/);
 
-  stage='SPA project race and live viewer purge';const held=await holdNextGet(page,'**'+B+'/comparisons/'+comparison.id,{status:401});cleanup.push(held.dispose);
+  stage='SPA project race and live viewer purge';const held=await holdNextGet(page,'**'+B+'/comparisons/'+comparison.id+'/summary',{status:401});cleanup.push(held.dispose);
   await execution(page).getByRole('button',{name:'Refresh status',exact:true}).click();await bounded(held.entered);
   await projectSection(page,group.other,'AI visibility','Prompts');await library(page).getByRole('button',{name:'Recent runs',exact:true}).click();await execution(page).getByText(/No prompt runs yet/).waitFor();
   await projectSection(page,group.main,'AI visibility','Prompts');await library(page).getByRole('button',{name:'Recent runs',exact:true}).click();await execution(page).getByRole('region',{name:'Recent prompt runs',exact:true}).waitFor();held.release();await held.dispose();
-  assert.ok(await page.getByRole('button',{name:'Sign out',exact:true}).isVisible());
+  await accountMenu(page);assert.ok(await page.getByRole('button',{name:'Sign out',exact:true}).isVisible());
   await pool.query("UPDATE membership SET role='viewer' WHERE workspace_id=$1 AND user_id=$2",[group.workspace.id,group.owner.id]);
   await execution(page).getByRole('button',{name:'Refresh',exact:true}).click();await back(page);
   assert.equal(await library(page).getByRole('button',{name:'Review a run',exact:true}).count(),0);browserClean();
@@ -105,7 +111,7 @@ try{
   stage='lost503/malformed acknowledged starts through expiry';{
     const g=await createPromptCase(phaseLabel('ack')),p=await begin(g),base='/api/projects/'+g.main.id+'/prompt-executions';await p.clock.install();
     for(const failure of ['disconnect','503','malformed']){
-      await review(p,g.prompts.disabled);await prepare(p,g);
+      await review(p,g.prompts.disabled);await prepare(p,g,{fresh:true});// Each fault needs a new paid start, not a reuse of the previous iteration's answer.
       const fault=await loseFirstPost(p,'**'+base+'/comparisons',{failure,onCommitted:async(body,accepted)=>{await runPrompt(accepted.comparison.id);await pool.query("UPDATE prompt_execution_quote SET created_at=clock_timestamp()-interval '10 minutes',expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",[body.quoteId]);}});cleanup.push(fault.dispose);
       await execution(p).getByRole('button',{name:'Start 1 paid request',exact:true}).evaluate(element=>{element.click();element.click();});await execution(p).getByRole('button',{name:'Retry same start request',exact:true}).waitFor();assert.equal(fault.bodies.length,1);
       await p.clock.setSystemTime(new Date(Date.now()+360_000));await p.waitForTimeout(1100);
@@ -119,10 +125,10 @@ try{
 
   stage='held poll stop remaining without dispatch';{
     const g=await createPromptCase(phaseLabel('cancel')),p=await begin(g),base='/api/projects/'+g.main.id+'/prompt-executions';await review(p,g.prompts.disabled);await prepare(p,g,{both:true});const before=await providerCounts(),c=await start(p,2);
-    const held=await holdNextGet(p,'**'+base+'/comparisons/'+c.id);cleanup.push(held.dispose);await bounded(held.entered,12_000);
+    const held=await holdNextGet(p,'**'+base+'/comparisons/'+c.id+'/summary');cleanup.push(held.dispose);await bounded(held.entered,12_000);
     const stop=execution(p).getByRole('button',{name:'Stop remaining requests',exact:true});assert.equal(await stop.isEnabled(),true);await stop.click();
-    await execution(p).getByText('This request was not dispatched.',{exact:true}).first().waitFor();held.release();await held.dispose();await p.waitForTimeout(200);
-    assert.equal(await execution(p).getByText('This request was not dispatched.',{exact:true}).count(),2);assert.equal((await providerCounts())['prompt-dispatch']??0,before['prompt-dispatch']??0);
+    await notSent(p).first().waitFor();held.release();await held.dispose();await p.waitForTimeout(200);
+    assert.equal(await notSent(p).count(),2);assert.equal((await providerCounts())['prompt-dispatch']??0,before['prompt-dispatch']??0);
     assert.deepEqual((await pool.query('SELECT status FROM prompt_execution WHERE comparison_id=$1',[c.id])).rows.map(r=>r.status),['cancelled','cancelled']);await runPrompt(c.id);browserClean();
     console.log('PASS a real stop action interrupts stale poll and cancels both undispatched model requests without charge dispatch.');
   }
@@ -141,7 +147,7 @@ try{
   stage='owner reconciliation and empty answer are distinct';{
     const g=await createPromptCase(phaseLabel('receipt')),p=await begin(g);await review(p,g.prompts.disabled);await prepare(p,g);const before=await providerCounts(),c=await start(p);
     await runPrompt(c.id,'receipt-only');await execution(p).getByRole('button',{name:'Refresh status',exact:true}).click();await execution(p).getByRole('button',{name:'Check charge receipt',exact:true}).click();
-    await execution(p).getByText('Only the charge was recovered. A new answer needs a fresh paid quote.',{exact:true}).waitFor();assert.match(await execution(p).innerText(),/Credit charge: USD 0\.000013/);
+    await execution(p).getByText('Only the charge was recovered. A new answer needs a fresh paid quote.',{exact:true}).waitFor();assert.match(await execution(p).innerText(),/Settled price\s+USD 0\.000013/);
     // Owner decision D3: charge reconciliation never pauses the workspace.
     assert.equal((await pool.query('SELECT paused FROM workspace_budget WHERE workspace_id=$1',[g.workspace.id])).rows[0].paused,false);assert.equal((await providerCounts())['prompt-dispatch']-(before['prompt-dispatch']??0),1);browserClean();
     const empty=await createPromptCase(phaseLabel('empty')),ep=await begin(empty);await review(ep,empty.prompts.disabled);await prepare(ep,empty);const ec=await start(ep);await runPrompt(ec.id,'empty');await execution(ep).getByRole('button',{name:'Refresh status',exact:true}).click();

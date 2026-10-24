@@ -31,10 +31,19 @@ async function focused(locator){await locator.waitFor();await page.waitForFuncti
 async function idle(){await panel.getByRole('button',{name:'Apply filters',exact:true}).waitFor();await page.waitForFunction(element=>!element.disabled,await panel.getByRole('button',{name:'Apply filters',exact:true}).elementHandle());}
 async function period(){await idle();await panel.getByLabel('From',{exact:true}).fill('2026-01-31');await panel.getByLabel('To',{exact:true}).fill('2026-01-31');await panel.getByRole('button',{name:'Apply filters',exact:true}).click();await idle();}
 async function list(){await panel.getByRole('button',{name:'← Back to list',exact:true}).click();await panel.getByRole('heading',{name:/^Saved (funnels|goals)$/}).waitFor();}
+// The shared FunnelBreakdown renders one list item per step: its count, "Conversion: <rate> overall" and the
+// panel's "Drop-off: <n> · From previous: <rate>" detail. Read them as [count, drop-off, from previous, overall].
+async function funnelSteps(){
+  const results=panel.getByRole('region',{name:'Funnel conversion results',exact:true});await results.waitFor();
+  return results.locator('ol > li').evaluateAll(items=>items.map(item=>{
+    const text=selector=>item.querySelector(selector)?.textContent??'';
+    const detail=/^Drop-off: (.*) · From previous: (.*)$/.exec(text('.t98-funnel-detail > p'))??[];
+    return [text('.t98-funnel-count > span'),detail[1],detail[2],/^Conversion: (.*?)(?: overall)?$/.exec(text('.t98-funnel-conversion'))?.[1]];
+  }));
+}
 async function funnelCounts(counts){
-  const table=panel.getByRole('region',{name:'Funnel conversion results',exact:true});await table.waitFor();
-  const rows=table.locator('tbody tr');assert.equal(await rows.count(),counts.length);
-  assert.deepEqual(await rows.evaluateAll(items=>items.map(row=>row.cells[1].textContent)),counts.map(String));
+  const steps=await funnelSteps();assert.equal(steps.length,counts.length);
+  assert.deepEqual(steps.map(step=>step[0]),counts.map(String));
 }
 async function newFunnel(name){
   await panel.getByRole('button',{name:'New funnel',exact:true}).click();await panel.getByLabel('Name',{exact:true}).fill(name);
@@ -88,11 +97,13 @@ async function workspace(id){
 }
 async function conversionsFor(project){
   const menu=page.getByRole('button',{name:/^(Menu|Close menu)$/});if(await menu.isVisible()&&await menu.getAttribute('aria-expanded')==='false')await menu.click();
-  await page.getByRole('navigation',{name:'Projects',exact:true}).getByRole('link',{name:project.name,exact:true}).click();
+  await page.locator('aside.t98-shell-sidebar').getByRole('combobox',{name:'Website',exact:true}).selectOption({label:project.name});
+  await page.waitForFunction(id=>new URLSearchParams(location.search).get('project')===id,project.id);
   if(await menu.isVisible()&&await menu.getAttribute('aria-expanded')==='false')await menu.click();
-  // Conversions is a sidebar section whose first tab, Goals, holds the funnels.
+  // Conversions is a sidebar section whose first tab, Goals, holds the panel's Goals/Funnels switch (Goals first).
   await page.locator('aside.t98-shell-sidebar').getByRole('navigation',{name:'Sections',exact:true}).getByRole('link',{name:'Conversions',exact:true}).click();
   await page.getByRole('navigation',{name:'Conversions pages',exact:true}).getByRole('link',{name:'Goals',exact:true}).click();
+  await panel.getByRole('button',{name:'Funnels',exact:true}).click();
   await panel.getByRole('heading',{name:'Saved funnels',exact:true}).waitFor();
 }
 async function assertGoal(){
@@ -111,7 +122,7 @@ try{
   assert.equal(create.bodies.length,2);assert.equal(create.accepted[1].replayed,true);const funnelId=create.accepted[0].item.id;await create.dispose();
   assert.equal((await pool.query('SELECT count(*) n FROM analytics_definition WHERE project_id=$1',[fixture.chains.id])).rows[0].n,'1');
   await period();await funnelCounts([3,2,1]);
-  assert.deepEqual(await panel.getByRole('region',{name:'Funnel conversion results'}).locator('tbody tr').evaluateAll(rows=>rows.map(row=>[row.cells[2].textContent,row.cells[3].textContent,row.cells[4].textContent])),[['—','—','100%'],['1','66.7%','66.7%'],['1','50%','33.3%']]);
+  assert.deepEqual((await funnelSteps()).map(step=>step.slice(1)),[['—','—','100%'],['1','66.7%','66.7%'],['1','50%','33.3%']]);
   console.log('PASS real saved funnel, exact 3/2/1 visitor counts, drop-offs, rates and immutable accepted-503 retry');
 
   stage='witness chain and responsive keyboard evidence';

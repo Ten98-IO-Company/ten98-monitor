@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFixture,createKeywordCase,createAuditCase} from './fixtures.mjs';
 import {fixtureGuard} from './guard.mjs';
-import {browserSession,providerCounts,href,assertLayout,loseFirstPost,holdNextGet,bounded,deferred,projectSection,captureFailure} from './browser.mjs';
+import {browserSession,providerCounts,href,assertLayout,loseFirstPost,holdNextGet,bounded,deferred,projectSection,captureFailure,accountMenu} from './browser.mjs';
 import {runAudit} from './jobs.mjs';
 import {getDatabase,closeDatabase} from '../../src/server/db.ts';
 import {stopJobs} from '../../src/server/jobs.ts';
@@ -35,7 +35,7 @@ try{
   assert.ok(options.some(s=>s.includes(group.main.origin)&&s.includes('Project origin')));
   assert.ok(options.some(s=>s.includes(group.domains.serving.hostname)&&s.includes('Verified serving domain')));
   assert.ok(options.every(s=>!s.includes(group.domains.redirect_alias.hostname)));
-  assert.match(await p.innerText(),/Worker unavailable/);assert.equal(await p.getByLabel('Maximum HTML pages',{exact:true}).inputValue(),'50');
+  assert.match(await p.innerText(),/The audit service is unavailable\./);assert.equal(await p.getByLabel('Maximum HTML pages',{exact:true}).inputValue(),'50');
   let starts=0;const countStarts=route=>{if(route.request().method()==='POST')starts++;return route.continue();};await page.route('**'+B,countStarts);
   await p.getByLabel('Start path',{exact:true}).fill('/?excluded=value');await p.getByRole('button',{name:'Queue audit',exact:true}).click();await p.getByRole('alert').waitFor();assert.equal(starts,0);
   await p.getByLabel('Start path',{exact:true}).fill('/');const run=await start(page,B);await page.unroute('**'+B,countStarts);
@@ -55,11 +55,11 @@ try{
   await pages.getByRole('cell',{name:/^Disallowed by robots\s*Resource:\s*Excluded$/}).waitFor();
   await pages.getByRole('cell',{name:/^HTTP error\s*Resource:\s*Done$/}).waitFor();
   const row=pages.getByRole('row').filter({has:page.getByRole('button',{name:'View page: '+group.main.origin+'/',exact:true})});await row.getByRole('button',{name:'View page: '+group.main.origin+'/',exact:true}).click();
-  await p.getByRole('heading',{name:'Title',exact:true}).waitFor();await p.getByText('Synthetic technical page',{exact:true}).waitFor();
+  await p.getByRole('heading',{name:'Title',exact:true}).waitFor();await p.getByRole('heading',{name:'Title',exact:true}).locator('xpath=following-sibling::p[1]').getByText('Synthetic technical page',{exact:true}).waitFor();
   await page.waitForFunction(el=>document.activeElement===el,await p.getByRole('heading',{name:group.main.origin+'/',exact:true}).elementHandle());
-  assert.equal(await p.locator('img,iframe,script').count(),0);await p.getByRole('region',{name:'Recorded page links',exact:true}).waitFor();
-  await p.getByRole('button',{name:'Incoming',exact:true}).click();await p.getByRole('region',{name:'Recorded page links',exact:true}).getByRole('button',{name:'View source page',exact:true}).first().waitFor();
-  await p.getByRole('button',{name:'Outgoing',exact:true}).click();await p.getByRole('region',{name:'Recorded page links',exact:true}).getByText('Second page',{exact:true}).waitFor();
+  assert.equal(await p.locator('img,iframe,script').count(),0);await p.getByRole('table',{name:'Recorded page links',exact:true}).waitFor();
+  await p.getByRole('button',{name:'Incoming',exact:true}).click();await p.getByRole('table',{name:'Recorded page links',exact:true}).getByRole('button',{name:'View source page',exact:true}).first().waitFor();
+  await p.getByRole('button',{name:'Outgoing',exact:true}).click();await p.getByRole('table',{name:'Recorded page links',exact:true}).getByText('Second page',{exact:true}).waitFor();
   await assertLayout(page,'audit-page-evidence');cleanBrowser();
   console.log('PASS audit scope excludes redirect aliases, explicit queueing, contained robots/HTML graph, partial findings and responsive page/link evidence.');
 
@@ -88,7 +88,7 @@ try{
   await pool.query('UPDATE site_audit_run SET data_expired_at=clock_timestamp() WHERE id=$1',[run.id]);
   await p.getByRole('button',{name:'Refresh status',exact:true}).click();await p.getByText(/Detailed audit results expired/).waitFor();
   held.release();await held.dispose();await page.waitForTimeout(100);
-  assert.equal(await p.getByRole('region',{name:'Recorded page links',exact:true}).count(),0);assert.equal(await p.getByRole('navigation',{name:'Audit results',exact:true}).count(),0);
+  assert.equal(await p.getByRole('table',{name:'Recorded page links',exact:true}).count(),0);assert.equal(await p.getByRole('navigation',{name:'Audit results',exact:true}).count(),0);
   await p.getByText('Pages analyzed',{exact:true}).waitFor();
   await p.getByRole('button',{name:'Delete audit',exact:true}).click();await page.getByRole('dialog',{name:'Delete this audit and its collected details?',exact:true}).getByRole('button',{name:'Cancel',exact:true}).click();await page.getByRole('dialog',{name:'Delete this audit and its collected details?',exact:true}).waitFor({state:'hidden'});assert.equal((await pool.query('SELECT deleted_at FROM site_audit_run WHERE id=$1',[run.id])).rows[0].deleted_at,null);
   await p.getByRole('button',{name:'Delete audit',exact:true}).click();await page.getByRole('dialog',{name:'Delete this audit and its collected details?',exact:true}).getByRole('button',{name:'Delete audit',exact:true}).click();await p.getByText('Audit deleted. Collected details are queued for cleanup.',{exact:true}).waitFor();
@@ -115,8 +115,8 @@ try{
     assert.equal(await ap.getByRole('button',{name:'Cancel audit',exact:true}).isEnabled(),true);await ap.getByRole('button',{name:'Cancel audit',exact:true}).click();await pg.getByRole('dialog',{name:'Cancel this audit?',exact:true}).getByRole('button',{name:'Cancel audit',exact:true}).click();
     await ap.getByText('Audit cancellation confirmed.',{exact:true}).waitFor();held.release();await held.dispose();assert.deepEqual((await runAudit(run.id)).requests,[]);
     const stale=await holdNextGet(pg,'**'+base+'/'+run.id,{status:401});cleanups.push(stale.dispose);await ap.getByRole('button',{name:'Refresh status',exact:true}).click();await bounded(stale.entered);
-    await projectSection(pg,g.other,'Search','Site health');await panel(pg).getByText(/No audits yet/).waitFor();await projectSection(pg,g.main,'Search','Site health');await panel(pg).getByRole('region',{name:'Audit history',exact:true}).waitFor();stale.release();await stale.dispose();await pg.waitForTimeout(150);
-    const account=pg.locator('details.account-menu');if(await account.getAttribute('open')===null)await account.locator(':scope > summary').click();
+    await projectSection(pg,g.other,'Search','Site health');await panel(pg).getByText(/No audits yet/).waitFor();await projectSection(pg,g.main,'Search','Site health');await panel(pg).getByRole('table',{name:'Audit history',exact:true}).waitFor();stale.release();await stale.dispose();await pg.waitForTimeout(150);
+    await accountMenu(pg);
     assert.ok(await pg.getByRole('button',{name:'Sign out',exact:true}).isVisible());
     await panel(pg).getByRole('button',{name:'View audit',exact:true}).click();await panel(pg).getByRole('button',{name:'Delete audit',exact:true}).waitFor();
     await pool.query("UPDATE membership SET role='viewer' WHERE workspace_id=$1 AND user_id=$2",[g.workspace.id,g.owner.id]);await panel(pg).getByRole('button',{name:'Refresh status',exact:true}).click();
@@ -129,7 +129,7 @@ try{
     await ap.getByRole('button',{name:'Cancel audit',exact:true}).click();await pg.getByRole('dialog',{name:'Cancel this audit?',exact:true}).getByRole('button',{name:'Cancel audit',exact:true}).click();await ap.getByText('Audit cancellation confirmed.',{exact:true}).waitFor();await runAudit(run.id);
     const path='**'+base+'**',deny=route=>route.request().method()==='GET'?route.fulfill({status:403,json:{error:'Synthetic audit access lost.'}}):route.continue();await pg.route(path,deny);
     await ap.getByRole('button',{name:'Refresh status',exact:true}).click();await ap.getByRole('button',{name:'Reload access',exact:true}).waitFor();assert.equal(await ap.getByRole('button',{name:'Delete audit',exact:true}).count(),0);assert.equal(await ap.getByRole('navigation',{name:'Audit results',exact:true}).count(),0);
-    await pg.unroute(path,deny);await ap.getByRole('button',{name:'Reload access',exact:true}).click();await ap.getByRole('region',{name:'Audit history',exact:true}).waitFor();cleanBrowser();
+    await pg.unroute(path,deny);await ap.getByRole('button',{name:'Reload access',exact:true}).click();await ap.getByRole('table',{name:'Audit history',exact:true}).waitFor();cleanBrowser();
     console.log('PASS current audit403 removes selected evidence and management until a deliberate access reload.');
   }
 }catch(error){await captureFailure(session?.page,error,stage).catch(()=>{});console.error('FAIL audit UI stage: '+stage+' ('+(error?.name??'Error')+'). Details saved privately.');process.exitCode=1;}

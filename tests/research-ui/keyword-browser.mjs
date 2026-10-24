@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFixture,createKeywordCase} from './fixtures.mjs';
 import {fixtureGuard} from './guard.mjs';
-import {browserSession,providerCounts,href,assertLayout,loseFirstPost,holdNextGet,bounded,projectSection,captureFailure,selectedKeywordFocus,openKeywordForm} from './browser.mjs';
+import {browserSession,providerCounts,href,assertLayout,loseFirstPost,holdNextGet,bounded,projectSection,captureFailure,selectedKeywordFocus,openKeywordForm,accountMenu} from './browser.mjs';
 import {runKeyword} from './jobs.mjs';
 import {getDatabase,closeDatabase} from '../../src/server/db.ts';
 import {stopJobs} from '../../src/server/jobs.ts';
@@ -77,10 +77,7 @@ try{
     await projectSection(page,group.other,'Search','Keywords');await page.getByText('No research runs have been saved for this project.',{exact:true}).waitFor();
     await projectSection(page,group.main,'Search','Keywords');await panel.getByRole('heading',{name:'Recent runs',exact:true}).waitFor();
     held.release();await held.dispose();held=null;await page.waitForTimeout(150);
-    const menu=page.getByRole('button',{name:/^(Menu|Close menu)$/});
-    if(await menu.isVisible()&&await menu.getAttribute('aria-expanded')==='false')await menu.click();
-    const account=page.locator('details.account-menu');
-    if(await account.getAttribute('open')===null)await account.locator(':scope > summary').click();
+    await accountMenu(page);
     assert.ok(await page.getByRole('button',{name:'Sign out',exact:true}).isVisible());assert.equal(await page.getByText('Your session expired. Sign in again.',{exact:true}).count(),0);
     assert.equal(await page.getByText('Synthetic stale response.',{exact:true}).count(),0);
   }
